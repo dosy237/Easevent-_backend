@@ -56,6 +56,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'rest_framework_simplejwt',
     'corsheaders',
+    'drf_spectacular',
     'whitenoise.runserver_nostatic',
     'users',
     'events',
@@ -126,7 +127,9 @@ REST_FRAMEWORK = {
     ],
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 20,
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 }
+
 
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=15),
@@ -190,3 +193,13 @@ cloudinary.config(
     api_secret=config('CLOUDINARY_API_SECRET'),
     secure=True,
 )
+
+# ─────────────────────────────────────────────────────────────
+# SWAGGER / SPECTACULAR
+# ─────────────────────────────────────────────────────────────
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'Easevent API',
+    'DESCRIPTION': 'Easevent Backend API Documentation',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+}
