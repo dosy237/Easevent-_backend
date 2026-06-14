@@ -26,7 +26,7 @@ COPY . /app/
 RUN chmod +x /app/script/entrypoint.sh
 
 # Use entrypoint script
-ENTRYPOINT ["/app/script/entrypoint.sh"]
+ENTRYPOINT ["sh", "/app/script/entrypoint.sh"]
 
 # Default command (can be overridden in docker-compose)
 CMD ["gunicorn", "easevent.wsgi:application", "--bind", "0.0.0.0:8000", "--timeout", "120"]
