@@ -32,6 +32,10 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
+      - name: Debug Connection Info
+        run: |
+          echo "Connecting to: ${{ secrets.SSH_HOST }} on port ${{ secrets.SSH_PORT }}"
+
       - name: 📥 Git Pull Latest Code
         uses: appleboy/ssh-action@v1.0.3
         with:
