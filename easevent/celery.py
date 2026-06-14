@@ -11,6 +11,7 @@ worker Celery démarre.  Il doit être importé dans __init__.py.
 import os
 from celery import Celery
 
+
 # Pointe Celery vers les settings Django
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'easevent.settings')
 
