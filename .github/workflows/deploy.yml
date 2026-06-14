@@ -40,6 +40,6 @@ jobs:
           key: ${{ secrets.SSH_KEY }}
           port: ${{ secrets.SSH_PORT || 22 }}
           script: |
-            cd ~/projects/Easevent-_backend  # Adjust this path to your VPS project location
+            cd ~/var/www/Easevent-_backend  
             git pull origin main
             docker-compose up -d --build
