@@ -1,0 +1,67 @@
+services:
+  web:
+    build: .
+    image: easevent-backend
+    container_name: web
+    command: gunicorn easevent.wsgi:application --bind 0.0.0.0:8000 --timeout 120
+    volumes:
+      - .:/app
+      - ./staticfiles:/app/staticfiles
+      - ./media:/app/media
+    ports:
+      - "8010:8000"
+    env_file:
+      - .env
+    depends_on:
+      - db
+      - redis
+    networks:
+      - mynetwork
+
+  db:
+    image: postgres:15
+    container_name: db
+    restart: always
+    env_file:
+      - .env
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - PGPORT=${DB_PORT:-5436}
+      - POSTGRES_DB=${DB_NAME}
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+    ports:
+      - "${DB_PORT:-5436}:${DB_PORT:-5436}"
+    networks:
+      - mynetwork
+
+  redis:
+    image: redis:7
+    container_name: redis
+    ports:
+      - "6379:6379"
+    networks:
+      - mynetwork
+
+  celery:
+    build: .
+    image: easevent-backend
+    container_name: celery
+    command: celery -A easevent worker -l info
+    volumes:
+      - .:/app
+    env_file:
+      - .env
+    depends_on:
+      - redis
+      - db
+    networks:
+      - mynetwork
+
+volumes:
+  postgres_data:
+
+networks:
+  mynetwork:
+    driver: bridge

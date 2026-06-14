@@ -10,7 +10,6 @@ import os
 from pathlib import Path
 from decouple import config
 from datetime import timedelta
-import dj_database_url
 import cloudinary
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -21,19 +20,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = config('SECRET_KEY')
 DEBUG = config('DEBUG', default=False, cast=bool)
 
-# ALLOWED_HOSTS - Version robuste et définitive
-ALLOWED_HOSTS = [
-    'localhost',
-    '127.0.0.1',
-    'easevent-backend.onrender.com',
-    '.onrender.com',
-]
-
-# Ajoute les hôtes supplémentaires depuis les variables d'environnement
-extra_hosts = config('ALLOWED_HOSTS', default='').split(',')
-for host in extra_hosts:
-    if host.strip() and host.strip() not in ALLOWED_HOSTS:
-        ALLOWED_HOSTS.append(host.strip())
+ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1').split(',')
 
 # En-tête proxy SSL (obligatoire sur Render)
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
@@ -47,12 +34,8 @@ CORS_ALLOWED_HEADERS = [
     'dnt', 'origin', 'user-agent', 'x-csrftoken', 'x-requested-with',
 ]
 
-if DEBUG:
-    CORS_ALLOW_ALL_ORIGINS = True
-    CORS_ALLOWED_ORIGINS = []
-else:
-    CORS_ALLOW_ALL_ORIGINS = False
-    CORS_ALLOWED_ORIGINS = ["https://easevent-backend.onrender.com"]
+CORS_ALLOWED_ORIGINS = config('CORS_ALLOWED_ORIGINS', default='http://localhost:3000,http://127.0.0.1:3000').split(',')
+CORS_ALLOW_ALL_ORIGINS = config('CORS_ALLOW_ALL_ORIGINS', default=DEBUG, cast=bool)
 
 # ─────────────────────────────────────────────────────────────
 # MODÈLE UTILISATEUR
@@ -119,22 +102,17 @@ WSGI_APPLICATION = 'easevent.wsgi.application'
 # ─────────────────────────────────────────────────────────────
 # BASE DE DONNÉES
 # ─────────────────────────────────────────────────────────────
-if 'DATABASE_URL' in os.environ:
-    DATABASES = {
-        'default': dj_database_url.config(conn_max_age=600, ssl_require=True)
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': config('DB_NAME', default='easevent_db'),
+        'USER': config('DB_USER', default='easevent_user'),
+        'PASSWORD': config('DB_PASSWORD', default=''),
+        'HOST': config('DB_HOST', default='db'),
+        'PORT': config('DB_PORT', default='5432'),
+        'CONN_MAX_AGE': 60,
     }
-else:
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.postgresql',
-            'NAME': config('DB_NAME', default='easevent_db'),
-            'USER': config('DB_USER', default='easevent_user'),
-            'PASSWORD': config('DB_PASSWORD'),
-            'HOST': config('DB_HOST', default='localhost'),
-            'PORT': config('DB_PORT', default='5432'),
-            'CONN_MAX_AGE': 60,
-        }
-    }
+}
 
 # ─────────────────────────────────────────────────────────────
 # DJANGO REST FRAMEWORK + JWT

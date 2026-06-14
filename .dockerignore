@@ -1,0 +1,25 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.env
+.venv
+db.sqlite3
+db.sqlite3-journal
+/static/
+/media/
+/staticfiles/
+.vscode/
+.idea/
+.git/
+.dockerignore
+Dockerfile
+docker-compose.yml
+# Exclude tests as requested
+**/tests.py
+**/test_*.py
+**/tests/
