@@ -10,7 +10,7 @@ from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, Spec
 
 urlpatterns = [
     # Interface d'administration Django
-    path('admin/', admin.site.urls),
+    path('admin/', admin.site.urls), 
 
     # API Events — /api/events/publics/
     path('api/events/', include('events.urls')),
