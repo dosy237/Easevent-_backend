@@ -15,6 +15,16 @@ curl -fsSL https://get.docker.com -o get-docker.sh
 sudo sh get-docker.sh
 ```
 
+### 1.1 Firewall Configuration (CRITICAL for GitHub Actions)
+If you get a "timeout" error in GitHub Actions, your firewall is likely blocking the connection.
+Run these commands to allow SSH:
+```bash
+sudo ufw allow 22/tcp
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+sudo ufw enable
+```
+
 ### Clone the Project
 ```bash
 mkdir -p ~/projects
