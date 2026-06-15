@@ -99,25 +99,44 @@ class EventPublicSerializer(serializers.ModelSerializer):
         return obj.invitations.filter(status='confirmed').count()
 
     def get_cover_image(self, obj):
+        request = self.context.get('request')
+        url = None
+
         # Priorité 0 : Champ image direct (uploadé ou seedé)
         if obj.cover_image:
-            return obj.cover_image
-
+            url = obj.cover_image
+        
         # Priorité 1 : photo uploadée et traitée via EventMedia
-        media = obj.media.filter(
-            media_type        = 'photo',
-            processing_status = 'done',
-            is_approved       = True,
-        ).first()
-
-        if media:
-            return media.processed_url or media.original_url
+        if not url:
+            media = obj.media.filter(
+                media_type        = 'photo',
+                processing_status = 'done',
+                is_approved       = True,
+            ).first()
+            if media:
+                url = media.processed_url or media.original_url
 
         # Priorité 2 : URL dans la configuration du template
-        if obj.template_config:
-            return obj.template_config.get('cover_image')
+        if not url and obj.template_config:
+            url = obj.template_config.get('cover_image')
 
-        return None
+        if not url:
+            return None
+
+        # Si c'est déjà une URL absolue, on la retourne
+        if url.startswith(('http://', 'https://')):
+            return url
+        
+        # Sinon, on construit l'URL absolue (pour les fichiers locaux dans /media/)
+        if request:
+            from django.conf import settings
+            # Si le chemin commence par 'events/', on s'assure qu'il est préfixé par MEDIA_URL
+            media_url = settings.MEDIA_URL
+            if not url.startswith(media_url):
+                url = f"{media_url}{url}"
+            return request.build_absolute_uri(url)
+        
+        return url
 
     def get_distance_km(self, obj):
         """

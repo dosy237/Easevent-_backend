@@ -45,8 +45,14 @@ class Command(BaseCommand):
         # 2. IMAGES & TYPES
         # ─────────────────────────────────────────────────
         import os
+        import shutil
+        from django.conf import settings
+        
         img_dir = '/home/eddy/projects/dosy/Easevent-_backend/seed/images'
-        images = [os.path.join(img_dir, f) for f in os.listdir(img_dir) if f.endswith(('.png', '.jpg', '.jpeg'))]
+        media_events_dir = os.path.join(settings.MEDIA_ROOT, 'events')
+        os.makedirs(media_events_dir, exist_ok=True)
+        
+        images = [f for f in os.listdir(img_dir) if f.endswith(('.png', '.jpg', '.jpeg'))]
         
         event_types = [
             (Event.EventType.MARIAGE, "Cérémonie de Mariage", ["Sarah & Marc", "Pauline & Kevin", "Aicha & Omar", "Bella & Junior", "Cathy & David"]),
@@ -72,11 +78,16 @@ class Command(BaseCommand):
             for i in range(5):
                 user = random.choice(users)
                 title = f"{base_title} : {suffixes[i]}"
-                img = images[(count) % len(images)] if images else None
+                img_name = images[(count) % len(images)] if images else None
                 
-                # We save relative path or full path as URL for now, 
-                # usually in dev we'd serve media files, but user said "take images from here"
-                # so we store the path.
+                relative_img_path = None
+                if img_name:
+                    source_path = os.path.join(img_dir, img_name)
+                    # Create a unique name to avoid conflicts if needed, but here we just copy
+                    dest_name = f"seed_{count}_{img_name}"
+                    dest_path = os.path.join(media_events_dir, dest_name)
+                    shutil.copy(source_path, dest_path)
+                    relative_img_path = f"events/{dest_name}"
                 
                 event = Event.objects.create(
                     organizer=user,
@@ -88,9 +99,10 @@ class Command(BaseCommand):
                     location_address=f"Place de l'événement {random.randint(1, 100)}, Cameroun",
                     status=Event.EventStatus.PUBLISHED,
                     visibility=Event.Visibility.PUBLIC,
-                    cover_image=img,
+                    cover_image=relative_img_path,
                     subdomain=slugify(f"{title}-{random.randint(100, 999)}")
                 )
                 count += 1
         
-        self.stdout.write(self.style.SUCCESS(f"🎉 Created {count} realistic events across 10 types!"))
+        self.stdout.write(self.style.SUCCESS(f"🎉 Created {count} realistic events across 10 types with images copied to media!"))
+
