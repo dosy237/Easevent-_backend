@@ -48,7 +48,7 @@ class Command(BaseCommand):
         import shutil
         from django.conf import settings
         
-        img_dir = '/home/eddy/projects/dosy/Easevent-_backend/seed/images'
+        img_dir = os.path.join(settings.BASE_DIR, 'seed', 'images')
         media_events_dir = os.path.join(settings.MEDIA_ROOT, 'events')
         os.makedirs(media_events_dir, exist_ok=True)
         
