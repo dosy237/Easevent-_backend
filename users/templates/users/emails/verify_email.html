@@ -1,0 +1,18 @@
+{% extends "users/emails/base_email.html" %}
+
+{% block content %}
+    <h2 style="color: #1B6E4B; margin-top: 0;">Bienvenue sur Easevent, {{ user.first_name|default:"!" }}</h2>
+    
+    <p>Nous sommes ravis de vous compter parmi nous. Pour commencer à utiliser l'application de planification d'événements la plus intuitive, il ne reste qu'une petite étape : confirmer votre adresse e-mail.</p>
+    
+    <div style="text-align: center;">
+        <a href="{{ verification_url }}" class="btn" style="color: #ffffff;">Confirmer mon e-mail</a>
+    </div>
+    
+    <p style="margin-top: 30px;">Si le bouton ci-dessus ne fonctionne pas, veuillez copier-coller ce lien dans votre navigateur :</p>
+    <p style="word-break: break-all; color: #1B6E4B; font-size: 14px;">{{ verification_url }}</p>
+    
+    <p style="font-size: 13px; color: #777777; margin-top: 30px;">
+        Ce lien de vérification expirera dans 24 heures. Si vous n'avez pas créé de compte sur Easevent, ignorez tout simplement cet e-mail.
+    </p>
+{% endblock %}

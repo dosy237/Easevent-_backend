@@ -5,6 +5,8 @@ from datetime import timedelta
 from django.core.mail import send_mail
 from django.conf      import settings
 from django.utils     import timezone
+from django.template.loader import render_to_string
+from django.utils     import timezone
 
 from rest_framework.decorators  import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -26,28 +28,44 @@ def get_tokens_for_user(user):
     }
 
 
-def send_verification_email(user, token):
-    # URL de production
-    verification_url = f"https://easevent-backend.onrender.com/api/auth/verify/{token}/"
+def send_verification_email(user, token, request=None):
+    if request:
+        verification_url = request.build_absolute_uri(f"/api/auth/verify/{token}/")
+    else:
+        base = getattr(settings, 'BASE_URL', 'http://127.0.0.1:8003')
+        # strip trailing slash if present
+        base = base.rstrip('/')
+        verification_url = f"{base}/api/auth/verify/{token}/"
 
-    send_mail(
-        subject    = '✅ Confirmez votre adresse email — Easevent',
-        message    = f"""
+    context = {
+        'user': user,
+        'verification_url': verification_url,
+    }
+
+    # Render HTML template
+    html_content = render_to_string('users/emails/verify_email.html', context)
+
+    # plain text fallback (for email clients that don't support HTML)
+    text_content = f"""
 Bonjour {user.first_name},
 
 Merci de vous être inscrit sur Easevent !
 
-Clique sur ce lien pour activer ton compte :
-
+Cliquez sur ce lien pour activer votre compte :
 {verification_url}
 
 Ce lien expire dans 24 heures.
 
 L'équipe Easevent
-        """,
-        from_email     = settings.DEFAULT_FROM_EMAIL,
-        recipient_list = [user.email],
-        fail_silently  = False,
+    """
+
+    send_mail(
+        subject       = '✅ Confirmez votre adresse email — Easevent',
+        message       = text_content,
+        html_message  = html_content,
+        from_email    = settings.DEFAULT_FROM_EMAIL,
+        recipient_list= [user.email],
+        fail_silently = False,
     )
 
 
@@ -113,7 +131,7 @@ def register_view(request):
         )
 
         # Envoyer l'email de vérification
-        send_verification_email(user, token)
+        send_verification_email(user, token, request)
 
         tokens = get_tokens_for_user(user)
 
@@ -192,7 +210,7 @@ def resend_verification_view(request):
         expires_at = timezone.now() + timedelta(hours=24),
     )
 
-    send_verification_email(user, token)
+    send_verification_email(user, token, request)
 
     return Response({'detail': 'Si cet email existe, un nouveau lien a été envoyé.'})
 
