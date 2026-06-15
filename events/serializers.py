@@ -99,24 +99,11 @@ class EventPublicSerializer(serializers.ModelSerializer):
         return obj.invitations.filter(status='confirmed').count()
 
     def get_cover_image(self, obj):
-        """
-        Retourne l'URL de l'image de couverture de l'événement.
+        # Priorité 0 : Champ image direct (uploadé ou seedé)
+        if obj.cover_image:
+            return obj.cover_image
 
-        Ordre de priorité :
-        1. Photo uploadée par l'organisateur (traitement terminé + approuvée)
-        2. URL stockée dans template_config (image externe configurée)
-        3. None si aucune image disponible
-
-        Pourquoi ce champ est calculé et non stocké directement ?
-        Parce que l'image peut venir de plusieurs sources selon
-        l'avancement de la création de l'événement.
-
-        obj.media : relation inverse vers EventMedia
-        processing_status='done' : traitement Celery terminé
-        is_approved=True : validée par l'organisateur
-        .first() : retourne le premier résultat ou None
-        """
-        # Priorité 1 : photo uploadée et traitée
+        # Priorité 1 : photo uploadée et traitée via EventMedia
         media = obj.media.filter(
             media_type        = 'photo',
             processing_status = 'done',
@@ -124,18 +111,12 @@ class EventPublicSerializer(serializers.ModelSerializer):
         ).first()
 
         if media:
-            # processed_url = photo après traitement (compression, harmonisation)
-            # original_url  = photo brute si le traitement n'a pas encore produit
-            #                 de version traitée
             return media.processed_url or media.original_url
 
         # Priorité 2 : URL dans la configuration du template
-        # template_config est un champ JSONB — on accède aux clés
-        # comme un dictionnaire Python
         if obj.template_config:
             return obj.template_config.get('cover_image')
 
-        # Aucune image disponible
         return None
 
     def get_distance_km(self, obj):

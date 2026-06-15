@@ -49,6 +49,11 @@ class Event(models.Model):
         ANNIVERSAIRE = 'anniversaire', 'Anniversaire'
         SOIREE       = 'soiree',       'Soirée'
         CONCERT      = 'concert',      'Concert'
+        SEMINAIRE    = 'seminaire',    'Séminaire'
+        GALA         = 'gala',         'Gala'
+        EXPOSITION   = 'exposition',   'Exposition'
+        FESTIVAL     = 'festival',     'Festival'
+        ATELIER      = 'atelier',      'Atelier'
         AUTRE        = 'autre',        'Autre'
 
     class Visibility(models.TextChoices):

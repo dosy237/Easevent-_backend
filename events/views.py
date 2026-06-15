@@ -75,18 +75,31 @@ from django.db import connection
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def liste_evenements_publics(request):
-    with connection.cursor() as cursor:
-        cursor.execute("""
-            SELECT COUNT(*) 
-            FROM events 
-            WHERE status = 'published' 
-            AND deleted_at IS NULL
-        """)
-        count = cursor.fetchone()[0]
+    """
+    GET /api/events/publics/
+    Retourne la liste des événements publiés et non supprimés.
+    Filtres possibles : type, date, recherche par titre.
+    """
+    evenements = Event.objects.filter(
+        status             = 'published',
+        visibility         = 'public',
+        deleted_at__isnull = True
+    ).order_by('-start_date')
 
+    # Filtre par type
+    event_type = request.query_params.get('type')
+    if event_type:
+        evenements = evenements.filter(event_type=event_type)
+
+    # Filtre par recherche
+    search = request.query_params.get('search')
+    if search:
+        evenements = evenements.filter(title__icontains=search)
+
+    serializer = EventPublicSerializer(evenements, many=True)
     return Response({
-        'raw_count_from_db': count,
-        'debug_version': 'v4-raw-sql'
+        'count':  evenements.count(),
+        'events': serializer.data
     })
 # ════════════════════════════════════════════════════════════════
 # VIEW : detail_evenement_public
