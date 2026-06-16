@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vérification de l'email - Easevent</title>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Tailwind CSS (via CDN for simplicity) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f0fdf4',
+                            100: '#dcfce7',
+                            500: '#22c55e',
+                            600: '#16a34a',
+                            700: '#15803d',
+                            800: '#1B6E4B',
+                            900: '#14532d',
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background-color: #f3f4f6;
+            background-image: radial-gradient(circle at top right, #e0f2fe 0%, transparent 40%),
+                              radial-gradient(circle at bottom left, #dcfce7 0%, transparent 40%);
+            background-attachment: fixed;
+        }
+        .glass-card {
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.02);
+        }
+        .animate-bounce-in {
+            animation: bounceIn 0.6s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards;
+        }
+        @keyframes bounceIn {
+            0% { transform: scale(0.3); opacity: 0; }
+            50% { transform: scale(1.05); opacity: 1; }
+            70% { transform: scale(0.9); opacity: 1; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4 antialiased">
+
+    <div class="glass-card max-w-md w-full rounded-3xl p-8 sm:p-10 text-center relative overflow-hidden">
+        
+        <!-- Decoration circles -->
+        <div class="absolute -top-12 -left-12 w-32 h-32 bg-brand-100 rounded-full mix-blend-multiply filter blur-xl opacity-70"></div>
+        <div class="absolute -bottom-12 -right-12 w-32 h-32 bg-blue-100 rounded-full mix-blend-multiply filter blur-xl opacity-70"></div>
+
+        <div class="relative z-10">
+            <!-- Icon -->
+            <div class="mx-auto w-20 h-20 sm:w-24 sm:h-24 rounded-full flex items-center justify-center animate-bounce-in shadow-lg mb-6 
+                {% if status == 'success' %} bg-gradient-to-br from-green-400 to-brand-800 text-white
+                {% else %} bg-gradient-to-br from-red-400 to-red-600 text-white {% endif %}">
+                
+                {% if status == 'success' %}
+                <svg class="w-10 h-10 sm:w-12 sm:h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path>
+                </svg>
+                {% else %}
+                <svg class="w-10 h-10 sm:w-12 sm:h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+                {% endif %}
+            </div>
+
+            <h1 class="text-2xl sm:text-3xl font-bold text-gray-900 mb-3 tracking-tight">
+                {{ title }}
+            </h1>
+            
+            <p class="text-base sm:text-lg text-gray-600 mb-8 leading-relaxed">
+                {{ message }}
+            </p>
+
+            {% if status == 'success' %}
+            <a href="easevent://" class="inline-flex items-center justify-center w-full px-6 py-3.5 text-base font-semibold text-white bg-brand-800 hover:bg-brand-900 rounded-xl shadow-md transition-all duration-200 ease-in-out hover:-translate-y-0.5 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-800">
+                Ouvrir l'application Easevent
+            </a>
+            {% else %}
+            <a href="easevent://" class="inline-flex items-center justify-center w-full px-6 py-3.5 text-base font-semibold text-white bg-gray-800 hover:bg-gray-900 rounded-xl shadow-md transition-all duration-200 ease-in-out hover:-translate-y-0.5 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-800">
+                Retourner à l'application
+            </a>
+            {% endif %}
+
+            <p class="mt-6 text-sm text-gray-400 font-medium tracking-wide relative">
+                <span class="bg-transparent px-2 relative z-10">Easevent &copy; {% now "Y" %}</span>
+            </p>
+        </div>
+    </div>
+
+</body>
+</html>

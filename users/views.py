@@ -6,7 +6,7 @@ from django.core.mail import send_mail
 from django.conf      import settings
 from django.utils     import timezone
 from django.template.loader import render_to_string
-from django.utils     import timezone
+from django.shortcuts import render
 
 from rest_framework.decorators  import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -153,8 +153,6 @@ def register_view(request):
         return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
-@api_view(['GET'])
-@permission_classes([AllowAny])
 def verify_email_view(request, token):
     """
     GET /api/auth/verify/<token>/
@@ -163,16 +161,18 @@ def verify_email_view(request, token):
     try:
         verification = EmailVerification.objects.get(token=token)
     except EmailVerification.DoesNotExist:
-        return Response(
-            {'detail': 'Lien de vérification invalide.'},
-            status=status.HTTP_400_BAD_REQUEST
-        )
+        return render(request, 'users/verify_result.html', {
+            'status': 'error',
+            'title': 'Lien invalide',
+            'message': "Ce lien de vérification est invalide ou n'existe plus."
+        })
 
     if verification.is_expired():
-        return Response(
-            {'detail': 'Ce lien a expiré. Demandez un nouveau lien.'},
-            status=status.HTTP_400_BAD_REQUEST
-        )
+        return render(request, 'users/verify_result.html', {
+            'status': 'error',
+            'title': 'Lien expiré',
+            'message': 'Ce lien a expiré. Veuillez demander un nouveau lien de vérification.'
+        })
 
     # Activer le compte
     user = verification.user
@@ -182,7 +182,11 @@ def verify_email_view(request, token):
     # Supprimer le token — il ne peut servir qu'une fois
     verification.delete()
 
-    return Response({'detail': 'Email vérifié avec succès. Vous pouvez vous connecter.'})
+    return render(request, 'users/verify_result.html', {
+        'status': 'success',
+        'title': 'Email vérifié !',
+        'message': 'Votre adresse email a été vérifiée avec succès. Vous pouvez maintenant fermer cette page et retourner sur l\'application pour vous connecter.'
+    })
 
 
 @api_view(['POST'])
