@@ -53,9 +53,12 @@ def notify(user, type_, title, body='', *, actor=None, event=None, invitation=No
     try:
         with transaction.atomic():
             if dedupe_key:
-                obj, _ = Notification.objects.get_or_create(user=user, dedupe_key=dedupe_key, defaults=fields)
+                obj, created = Notification.objects.get_or_create(user=user, dedupe_key=dedupe_key, defaults=fields)
+                obj.just_created = created
                 return obj
-            return Notification.objects.create(user=user, **fields)
+            obj = Notification.objects.create(user=user, **fields)
+            obj.just_created = True
+            return obj
     except IntegrityError:
         return Notification.objects.filter(user=user, dedupe_key=dedupe_key).first()
     except Exception:
@@ -81,8 +84,10 @@ def _hhmm(dt):
 
 
 def _reminders(user, now):
+    """Crée le rappel dû de chaque ticket. Retourne les notifications nouvelles."""
     from tickets.models import Ticket
 
+    new = []
     tickets = (Ticket.objects.select_related('event')
                .filter(user=user, status=Ticket.Status.GENERATED,
                        event__start_date__gt=now, event__start_date__lte=now + timedelta(days=7, hours=1),
@@ -99,24 +104,38 @@ def _reminders(user, now):
         if not due:
             continue
         key, at, title, body = due[-1]           # seulement le rappel le plus récent
-        notify(user, Notification.Type.REMINDER, title, body, event=t.event, ticket=t,
-               data={'step': key}, dedupe_key=f'reminder:{t.id}:{key}', created_at=at)
+        n = notify(user, Notification.Type.REMINDER, title, body, event=t.event, ticket=t,
+                   data={'step': key}, dedupe_key=f'reminder:{t.id}:{key}', created_at=at)
+        if n is not None and getattr(n, 'just_created', False):
+            new.append(n)
+    return new
 
 
 def _daily_summaries(user, now):
+    """
+    « Bilan du jour · 20:00 » : confirmations de la veille 20:00 au jour 20:00.
+    Le planificateur le crée à 20:00 ; à défaut, il est créé à la consultation.
+    """
+    from django.db.models import DateTimeField, ExpressionWrapper, F
     from tickets.models import Ticket
 
+    tz = timezone.get_current_timezone()
     today = timezone.localdate(now)
-    start = _local_dt(today - timedelta(days=SUMMARY_LOOKBACK_DAYS), 0)
+    last_day = today if now >= _local_dt(today, SUMMARY_HOUR) else today - timedelta(days=1)
+    start = _local_dt(last_day - timedelta(days=SUMMARY_LOOKBACK_DAYS), SUMMARY_HOUR)
+    end = _local_dt(last_day, SUMMARY_HOUR)
+    shift = timedelta(hours=24 - SUMMARY_HOUR)       # 20:00 → minuit du jour suivant
     rows = (Ticket.objects
             .filter(event__organizer=user, status=Ticket.Status.GENERATED,
-                    generated_at__gte=start, generated_at__lt=_local_dt(today, 0))
-            .annotate(day=TruncDate('generated_at', tzinfo=timezone.get_current_timezone()))
+                    generated_at__gte=start, generated_at__lt=end)
+            .annotate(shifted=ExpressionWrapper(F('generated_at') + shift, output_field=DateTimeField()))
+            .annotate(day=TruncDate('shifted', tzinfo=tz))
             .values('event_id', 'event__title', 'day')
             .annotate(n=Count('id')))
+    new = []
     for r in rows:
         n = r['n']
-        notify(
+        obj = notify(
             user, Notification.Type.DAILY_SUMMARY,
             f"{n} nouvelle{'s' if n > 1 else ''} confirmation{'s' if n > 1 else ''}",
             f"pour {r['event__title']}",
@@ -125,6 +144,9 @@ def _daily_summaries(user, now):
             dedupe_key=f"summary:{r['event_id']}:{r['day'].isoformat()}",
             created_at=_local_dt(r['day'], SUMMARY_HOUR),
         )
+        if obj is not None and getattr(obj, 'just_created', False):
+            new.append(obj)
+    return new
 
 
 def refresh_scheduled(user, force=False):
@@ -141,5 +163,6 @@ def refresh_scheduled(user, force=False):
         if prefs['daily_summary']:
             _daily_summaries(user, now)
         Notification.objects.filter(user=user, created_at__lt=now - timedelta(days=RETENTION_DAYS)).delete()
+        # (le ménage global est aussi fait chaque nuit par notifications.tasks.nightly_cleanup)
     except Exception:
         logger.exception('Calcul des notifications planifiées impossible')

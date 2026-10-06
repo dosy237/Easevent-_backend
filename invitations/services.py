@@ -359,35 +359,40 @@ def invite_batch(event, organizer, *, emails=(), phones=(), user_ids=(), message
         )
 
     expires_at = (event.end_date or event.start_date) + timedelta(days=7)
-    pairs = []
+    created = []
     with transaction.atomic():
         for c in fresh:
-            raw, hashed = new_token()
             inv = Invitation(
                 event=event,
                 invited_user=c['user'],
                 email=c['email'],
                 contact_name=c['name'],
                 message=message,
-                token=hashed,
+                # Empreinte provisoire : le vrai jeton est créé à l'envoi
+                token=new_token()[1],
                 status='sent',
                 channel={'member': 'platform_notification', 'email': 'email', 'phone': 'sms'}[c['kind']],
+                delivery_status='pending',
                 expires_at=expires_at,
             )
             inv.set_phone(c['phone'])
             inv.save()
-            pairs.append((inv, raw))
-
-    deliver(pairs, request)
+            created.append(inv)
 
     # Membres : notification dans l'application (M17)
     from notifications.models import Notification
     from notifications.services import notify
-    for inv, _ in pairs:
+    for inv in created:
         if inv.invited_user_id:
             notify(inv.invited_user, Notification.Type.INVITATION_RECEIVED, organizer.full_name,
                    f'vous invite à {event.title}', actor=organizer, event=event, invitation=inv,
                    dedupe_key=f'invitation:{inv.id}')
+
+    queue_send(created)
+    states = dict(Invitation.objects.filter(pk__in=[i.pk for i in created]).values_list('pk', 'delivery_status'))
+    for inv in created:
+        inv.delivery_status = states.get(inv.pk, inv.delivery_status)
+    pairs = [(inv, None) for inv in created]
 
     return {
         'created': [{'id': str(inv.id), 'kind': {'platform_notification': 'member', 'email': 'email', 'sms': 'phone'}[inv.channel],
@@ -416,22 +421,47 @@ def can_remind(inv, now=None):
 
 def remind(invitations, request=None):
     """
-    Relance les invitations données avec un nouveau lien.
+    Relance les invitations données (nouveau lien, envoyé en arrière-plan).
     Retourne {'reminded': n, 'failed': n} — une invitation sans canal
     d'envoi n'est pas relancée (son lien actuel reste valable).
     """
     now = timezone.now()
-    pairs = []
+    todo = []
     for inv in invitations:
         if not can_remind(inv, now):
             continue
+        inv.reminded_at, inv.remind_count, inv.delivery_status = now, inv.remind_count + 1, 'pending'
+        inv.save(update_fields=['reminded_at', 'remind_count', 'delivery_status', 'updated_at'])
+        todo.append(inv)
+    queue_send(todo, reminder=True)
+    failed = Invitation.objects.filter(pk__in=[i.pk for i in todo], delivery_status__in=('failed', 'not_configured')).count()
+    return {'reminded': len(todo) - failed, 'failed': failed}
+
+
+# ─────────────────────────────────────────────────────────────
+# Envoi effectif (worker Celery, ou direct si la file est indisponible)
+# ─────────────────────────────────────────────────────────────
+def queue_send(invitations, reminder=False):
+    ids = [str(inv.pk) for inv in invitations if _recipient_email(inv) or inv.phone_number]
+    in_app = [inv.pk for inv in invitations if str(inv.pk) not in ids]
+    if in_app:
+        Invitation.objects.filter(pk__in=in_app).update(delivery_status='in_app')
+    if ids:
+        from easevent.dispatch import dispatch
+        from .tasks import send_invitations
+        dispatch(send_invitations, ids, reminder=reminder)
+
+
+def send_now(invitation_ids, reminder=False):
+    """Crée un nouveau jeton pour chaque invitation et envoie email / SMS."""
+    pairs = []
+    for inv in (Invitation.objects.select_related('event', 'event__organizer', 'invited_user')
+                .filter(pk__in=invitation_ids).exclude(status__in=('revoked', 'expired'))):
         raw, hashed = new_token()
-        inv.token, inv.reminded_at, inv.remind_count = hashed, now, inv.remind_count + 1
-        inv.save(update_fields=['token', 'reminded_at', 'remind_count', 'updated_at'])
+        inv.token = hashed
+        inv.save(update_fields=['token', 'updated_at'])
         pairs.append((inv, raw))
-    results = deliver(pairs, request, reminder=True)
-    failed = sum(1 for state in results.values() if state != 'sent')
-    return {'reminded': len(pairs) - failed, 'failed': failed}
+    return deliver(pairs, None, reminder=reminder)
 
 
 # ─────────────────────────────────────────────────────────────

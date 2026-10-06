@@ -214,12 +214,24 @@ CACHES = {
 if TESTING:
     CACHES = {'default': {'BACKEND': 'django.core.cache.backends.locmem.LocMemCache'}}
 
+# Celery : worker (tâches de fond) + beat (planificateur), voir easevent/celery.py
+# Dans Docker, REDIS_URL doit viser le service : redis://redis:6379/0
 CELERY_BROKER_URL = REDIS_URL
 CELERY_RESULT_BACKEND = REDIS_URL
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = 'Europe/Paris'
+CELERY_TASK_IGNORE_RESULT = True              # aucun résultat stocké (sobriété)
+CELERY_TASK_ACKS_LATE = True                  # une tâche interrompue est rejouée
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+CELERY_TASK_TIME_LIMIT = 300
+CELERY_TASK_SOFT_TIME_LIMIT = 240
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+# Côté application web : si Redis ne répond pas, l'envoi se fait directement
+CELERY_BROKER_TRANSPORT_OPTIONS = {'socket_connect_timeout': 2, 'socket_timeout': 2, 'max_retries': 1}
+if TESTING:
+    CELERY_TASK_ALWAYS_EAGER = True           # tests : tâches exécutées sur place
 
 # ─────────────────────────────────────────────────────────────
 # FICHIERS STATIQUES & MÉDIAS

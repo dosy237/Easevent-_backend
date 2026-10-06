@@ -1,0 +1,14 @@
+{% autoescape off %}C'est demain{% if first_name %}, {{ first_name }}{% endif %} !
+
+{{ event_title }}
+Date : {{ date }}{% if location %}
+Lieu : {{ location }}{% endif %}{% if dress_code %}
+Dress code : {{ dress_code }}{% endif %}{% if ticket_number %}
+Ticket : {{ ticket_number }}{% endif %}
+
+Votre ticket et son QR code sont dans l'application Easevent, onglet « Tickets ».
+{% if online_link %}Lien de connexion : {{ online_link }}
+{% endif %}
+Vous pouvez désactiver ces rappels dans l'application : Notifications › Préférences.
+— Easevent (Eranis)
+{% endautoescape %}

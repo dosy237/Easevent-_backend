@@ -162,6 +162,14 @@ def _guest_rows(event):
 @permission_classes([IsAuthenticated])
 def participants(request, event_id):
     event = _own_event(request, event_id)
+    # Filet de sécurité si le worker Celery est arrêté : envoi direct
+    from datetime import timedelta
+    from .services import send_now
+    stuck = list(event.invitations.filter(
+        delivery_status='pending', status__in=('sent', 'opened'),
+        updated_at__lt=timezone.now() - timedelta(minutes=10)).values_list('id', flat=True)[:50])
+    if stuck:
+        send_now([str(i) for i in stuck])
     rows, counts = _guest_rows(event)
     return Response({
         'count':        len(rows),
