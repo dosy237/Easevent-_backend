@@ -115,6 +115,19 @@ class User(AbstractBaseUser, PermissionsMixin):
         help_text    = "Passe à True après clic sur le lien de confirmation"
     )
 
+    # ── Consentements RGPD ────────────────────────────────────
+    # Horodatage serveur de l'acceptation de la politique de
+    # confidentialité (preuve du consentement, Art. 7 RGPD)
+    accepted_privacy_at = models.DateTimeField(
+        null         = True,
+        blank        = True,
+        verbose_name = "Acceptation de la politique de confidentialité"
+    )
+    marketing_opt_in = models.BooleanField(
+        default      = False,
+        verbose_name = "Accepte de recevoir les nouveautés par email"
+    )
+
     # ── Abonnement actuel ─────────────────────────────────────
     subscription_plan = models.CharField(
         max_length   = 10,
@@ -132,6 +145,14 @@ class User(AbstractBaseUser, PermissionsMixin):
         unique       = True,
         verbose_name = "ID client Stripe"
     )
+
+    # ── Stripe Connect (organisateur) ─────────────────────────
+    # Compte Express de l'organisateur : l'argent de ses tickets y est
+    # versé directement, puis viré sur son IBAN par Stripe.
+    stripe_account_id      = models.CharField(max_length=64, blank=True, null=True, unique=True,
+                                              verbose_name="Compte Stripe Connect")
+    stripe_charges_enabled = models.BooleanField(default=False, verbose_name="Peut encaisser")
+    stripe_payouts_enabled = models.BooleanField(default=False, verbose_name="Virements activés")
 
     # ── Connexion sociale (Google / Apple) ────────────────────
     oauth_provider = models.CharField(
@@ -327,7 +348,9 @@ class EmailVerification(models.Model):
         on_delete    = models.CASCADE,
         related_name = 'email_verification'
     )
-    # Token aléatoire de 64 caractères — envoyé dans le lien email
+    # Empreinte SHA-256 du token envoyé par email : le token en clair
+    # n'est jamais stocké (une fuite de la base ne permet pas
+    # d'activer des comptes). Voir users/tokens.py.
     token      = models.CharField(max_length=64, unique=True)
     created_at = models.DateTimeField(auto_now_add=True)
     expires_at = models.DateTimeField()

@@ -139,24 +139,28 @@ class AuthAPITest(TestCase):
 
     def test_inscription_succes(self):
         """
-        Test 8 — L'inscription cree un compte et retourne des tokens JWT.
-        Critere d'acceptation US-01 : le compte est cree avec is_verified=False.
+        Test 8 — L'inscription cree un compte non verifie (US-01, M01).
+        Aucun jeton de session n'est renvoye tant que l'email n'est pas
+        verifie : l'application affiche l'ecran M03.
         """
         payload = {
-            'email':      'nouveau@easevent.fr',
-            'password':   'MotDePasse123',
-            'first_name': 'Nouveau',
-            'last_name':  'Membre',
+            'email':            'nouveau@easevent.fr',
+            'password':         'MotDePasse123',
+            'first_name':       'Nouveau',
+            'last_name':        'Membre',
+            'accepted_privacy': True,
+            'marketing_opt_in': True,
         }
         response = self.client.post('/api/auth/register/', payload, format='json')
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertIn('access',  response.data)
-        self.assertIn('refresh', response.data)
+        self.assertTrue(response.data['requires_verification'])
+        self.assertNotIn('access', response.data)
         self.assertFalse(response.data['user']['is_verified'])
 
-        # Verifier que le compte existe en base
-        self.assertTrue(User.objects.filter(email='nouveau@easevent.fr').exists())
+        user = User.objects.get(email='nouveau@easevent.fr')
+        self.assertIsNotNone(user.accepted_privacy_at)
+        self.assertTrue(user.marketing_opt_in)
 
     def test_inscription_email_deja_utilise(self):
         """
@@ -174,6 +178,7 @@ class AuthAPITest(TestCase):
             'password':   'AutreMotDePasse456',
             'first_name': 'Autre',
             'last_name':  'Personne',
+            'accepted_privacy': True,
         }
         response = self.client.post('/api/auth/register/', payload, format='json')
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -278,3 +283,199 @@ class AuthAPITest(TestCase):
         # Les donnees personnelles sont anonymisees
         self.assertIn('deleted_', user_en_base.email)
         self.assertEqual(user_en_base.first_name, 'Utilisateur')
+
+
+# ─────────────────────────────────────────────────────────────
+# CLASSE 3 — Parcours de compte du MVP (M01 → M04)
+# ─────────────────────────────────────────────────────────────
+from django.core import mail
+from django.core.cache import cache
+from django.test import override_settings
+
+from .tokens import create_email_verification, hash_token
+from .models import EmailVerification
+
+
+@override_settings(FRONTEND_URL='https://app.easevent.test')
+class AccountFlowTest(TestCase):
+
+    def setUp(self):
+        cache.clear()   # remet les compteurs de limitation a zero
+        self.client = APIClient()
+
+    def _register(self, **overrides):
+        payload = {
+            'email': 'sarah@easevent.fr', 'password': 'Jardin-Emeraude-26',
+            'first_name': 'Sarah', 'last_name': 'Martin', 'accepted_privacy': True,
+        }
+        payload.update(overrides)
+        return self.client.post('/api/auth/register/', payload, format='json')
+
+    # ── M01 : consentement obligatoire ─────────────────────────
+    def test_inscription_refusee_sans_consentement(self):
+        response = self._register(accepted_privacy=False)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('accepted_privacy', response.data)
+        self.assertFalse(User.objects.filter(email='sarah@easevent.fr').exists())
+
+    def test_inscription_refuse_mot_de_passe_faible(self):
+        response = self._register(password='12345678')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('password', response.data)
+
+    def test_inscription_refuse_balises_dans_le_nom(self):
+        response = self._register(first_name='<script>')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_inscription_envoie_un_lien_vers_l_application(self):
+        self._register()
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn('https://app.easevent.test/verify/', mail.outbox[0].body)
+
+    # ── M03 : vérification de l'email ─────────────────────────
+    def test_jeton_stocke_sous_forme_hachee(self):
+        user = User.objects.create_user(email='a@easevent.fr', password='x', first_name='A', last_name='B')
+        raw = create_email_verification(user)
+        stored = EmailVerification.objects.get(user=user).token
+        self.assertNotEqual(stored, raw)
+        self.assertEqual(stored, hash_token(raw))
+
+    def test_verification_connecte_l_utilisateur_et_jeton_a_usage_unique(self):
+        user = User.objects.create_user(email='a@easevent.fr', password='x', first_name='A', last_name='B')
+        raw = create_email_verification(user)
+
+        response = self.client.post('/api/auth/verify-email/', {'token': raw}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('access', response.data)
+        user.refresh_from_db()
+        self.assertTrue(user.is_verified)
+
+        again = self.client.post('/api/auth/verify-email/', {'token': raw}, format='json')
+        self.assertEqual(again.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_connexion_non_verifie_renvoie_un_code(self):
+        User.objects.create_user(email='a@easevent.fr', password='Jardin-Emeraude-26', first_name='A', last_name='B')
+        response = self.client.post('/api/auth/login/',
+                                    {'email': 'a@easevent.fr', 'password': 'Jardin-Emeraude-26'}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data['code'], 'email_not_verified')
+
+    def test_renvoi_reponse_generique(self):
+        known = self.client.post('/api/auth/resend-verification/', {'email': 'inconnu@easevent.fr'}, format='json')
+        User.objects.create_user(email='a@easevent.fr', password='x', first_name='A', last_name='B')
+        unknown = self.client.post('/api/auth/resend-verification/', {'email': 'a@easevent.fr'}, format='json')
+        self.assertEqual(known.data, unknown.data)
+        self.assertEqual(len(mail.outbox), 1)
+
+    # ── M04 : mot de passe oublié ─────────────────────────────
+    def test_reinitialisation_complete(self):
+        import re
+        user = User.objects.create_user(email='a@easevent.fr', password='Ancien-Mot-2026',
+                                        first_name='A', last_name='B', is_verified=True)
+        response = self.client.post('/api/auth/password-reset/', {'email': 'a@easevent.fr'}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        link = re.search(r'/reset-password/([^/\s]+)/([^/\s]+)', mail.outbox[0].body)
+        uid, token = link.group(1), link.group(2)
+
+        response = self.client.post('/api/auth/password-reset/confirm/',
+                                    {'uid': uid, 'token': token, 'new_password': 'Nouveau-Mot-2026'}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        user.refresh_from_db()
+        self.assertTrue(user.check_password('Nouveau-Mot-2026'))
+
+        # Le lien ne sert qu'une fois
+        reuse = self.client.post('/api/auth/password-reset/confirm/',
+                                 {'uid': uid, 'token': token, 'new_password': 'Autre-Mot-2026'}, format='json')
+        self.assertEqual(reuse.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_reinitialisation_email_inconnu_meme_reponse(self):
+        response = self.client.post('/api/auth/password-reset/', {'email': 'personne@easevent.fr'}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(mail.outbox), 0)
+
+    # ── Sécurité ──────────────────────────────────────────────
+    def test_limitation_des_tentatives_de_connexion(self):
+        codes = [
+            self.client.post('/api/auth/login/', {'email': 'x@easevent.fr', 'password': 'faux'}, format='json').status_code
+            for _ in range(11)
+        ]
+        self.assertEqual(codes[-1], status.HTTP_429_TOO_MANY_REQUESTS)
+
+    def test_deconnexion_invalide_le_refresh_token(self):
+        from rest_framework_simplejwt.tokens import RefreshToken
+        user = User.objects.create_user(email='a@easevent.fr', password='x', first_name='A', last_name='B')
+        refresh = str(RefreshToken.for_user(user))
+        self.client.post('/api/auth/logout/', {'refresh': refresh}, format='json')
+        response = self.client.post('/api/auth/token/refresh/', {'refresh': refresh}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_export_rgpd_et_stats(self):
+        from rest_framework_simplejwt.tokens import RefreshToken
+        user = User.objects.create_user(email='a@easevent.fr', password='x', first_name='A', last_name='B')
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {RefreshToken.for_user(user).access_token}')
+        export = self.client.get('/api/auth/me/export/')
+        self.assertEqual(export.status_code, status.HTTP_200_OK)
+        self.assertEqual(export.data['account']['email'], 'a@easevent.fr')
+        self.assertNotIn('password', str(export.data))
+        stats = self.client.get('/api/auth/me/stats/')
+        self.assertEqual(stats.data['events_count'], 0)
+
+
+# ─────────────────────────────────────────────────────────────
+# CLASSE 4 — Application mobile (APK) : liens email et images
+# ─────────────────────────────────────────────────────────────
+@override_settings(FRONTEND_URL='', PUBLIC_BASE_URL='https://easevent.example.com')
+class MobileAppLinksTest(TestCase):
+
+    def setUp(self):
+        cache.clear()
+        self.client = APIClient()
+
+    def test_lien_reinitialisation_ouvre_la_page_du_backend(self):
+        import re
+        User.objects.create_user(email='a@easevent.fr', password='Ancien-Mot-2026', first_name='A', last_name='B')
+        self.client.post('/api/auth/password-reset/', {'email': 'a@easevent.fr'}, format='json')
+        path = re.search(r'https?://[^/\s]+(/api/auth/password-reset/[^/\s]+/[^/\s]+/)', mail.outbox[0].body).group(1)
+
+        page = self.client.get(path)
+        self.assertEqual(page.status_code, 200)
+        self.assertContains(page, 'Nouveau mot de passe')
+
+        from django.test import Client
+        browser = Client(enforce_csrf_checks=False)
+        done = browser.post(path, {'new_password': 'Nouveau-Mot-2026', 'confirm_password': 'Nouveau-Mot-2026'})
+        self.assertContains(done, 'Mot de passe modifié')
+        self.assertTrue(User.objects.get(email='a@easevent.fr').check_password('Nouveau-Mot-2026'))
+
+        # Le lien ne sert qu'une fois
+        self.assertContains(browser.get(path), 'Lien non valide')
+
+    def test_page_reinitialisation_lien_invalide(self):
+        response = self.client.get('/api/auth/password-reset/xxx/yyy/')
+        self.assertContains(response, 'Lien non valide')
+
+    def test_image_de_couverture_en_url_absolue_https(self):
+        from datetime import timedelta
+        from events.models import Event
+        organizer = User.objects.create_user(email='o@easevent.fr', password='x', first_name='O', last_name='R')
+        Event.objects.create(
+            organizer=organizer, title='Gala', event_type='gala',
+            start_date=timezone.now() + timedelta(days=3), end_date=timezone.now() + timedelta(days=4),
+            status='published', visibility='public', cover_image='events/seed_0_gallery01.png',
+        )
+        events = self.client.get('/api/events/publics/').data['events']
+        self.assertEqual(events[0]['cover_image'], 'https://easevent.example.com/media/events/seed_0_gallery01.png')
+
+    def test_media_servi_par_django(self):
+        import os, tempfile
+        from django.conf import settings
+        os.makedirs(os.path.join(settings.MEDIA_ROOT, 'events'), exist_ok=True)
+        with tempfile.NamedTemporaryFile(dir=os.path.join(settings.MEDIA_ROOT, 'events'), suffix='.png', delete=False) as f:
+            f.write(b'\x89PNG test')
+        try:
+            name = os.path.basename(f.name)
+            response = self.client.get(f'/media/events/{name}')
+            self.assertEqual(response.status_code, 200)
+            self.assertIn(self.client.get('/media/../manage.py').status_code, (400, 404))
+        finally:
+            os.remove(f.name)

@@ -40,6 +40,7 @@ from django.utils            import timezone
 from django.utils.text       import slugify
 from django.utils.dateparse  import parse_datetime
 from django.core.mail        import send_mail
+from django.conf             import settings
 
 # ─────────────────────────────────────────────────────────────────
 # IMPORTS DJANGO REST FRAMEWORK
@@ -62,6 +63,12 @@ import cloudinary.uploader
 # ─────────────────────────────────────────────────────────────────
 from .models      import Event
 from .serializers import EventPublicSerializer
+from .ticketing   import clean_ticketing, clean_style
+
+import logging
+logger = logging.getLogger(__name__)
+
+VISIBILITIES = ('public', 'private')
 
 
 # ════════════════════════════════════════════════════════════════
@@ -80,7 +87,7 @@ def liste_evenements_publics(request):
     Retourne la liste des événements publiés et non supprimés.
     Filtres possibles : type, date, recherche par titre.
     """
-    evenements = Event.objects.filter(
+    evenements = Event.objects.select_related('organizer').filter(
         status             = 'published',
         visibility         = 'public',
         deleted_at__isnull = True
@@ -96,7 +103,7 @@ def liste_evenements_publics(request):
     if search:
         evenements = evenements.filter(title__icontains=search)
 
-    serializer = EventPublicSerializer(evenements, many=True)
+    serializer = EventPublicSerializer(evenements, many=True, context={'request': request})
     return Response({
         'count':  evenements.count(),
         'events': serializer.data
@@ -154,7 +161,7 @@ def detail_evenement_public(request, event_id):
                     status=status.HTTP_403_FORBIDDEN
                 )
 
-    serializer = EventPublicSerializer(event)
+    serializer = EventPublicSerializer(event, context={'request': request, 'with_my_ticket': True})
     return Response(serializer.data)
 
 
@@ -169,12 +176,12 @@ def mes_evenements(request):
     Retourne tous les événements créés par l'utilisateur connecté.
     Inclut les brouillons, publiés et archivés.
     """
-    evenements = Event.objects.filter(
+    evenements = Event.objects.select_related('organizer').filter(
         organizer          = request.user,
         deleted_at__isnull = True,
     ).order_by('-created_at')
 
-    serializer = EventPublicSerializer(evenements, many=True)
+    serializer = EventPublicSerializer(evenements, many=True, context={'request': request})
     return Response({
         'count':  evenements.count(),
         'events': serializer.data,
@@ -224,9 +231,10 @@ def upload_image(request):
             'url':       result['secure_url'],
             'public_id': result['public_id'],
         })
-    except Exception as e:
+    except Exception:
+        logger.exception("Erreur d'upload Cloudinary")
         return Response(
-            {'detail': f'Erreur upload Cloudinary : {str(e)}'},
+            {'detail': "Impossible d'envoyer l'image pour le moment. Réessayez."},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
@@ -290,6 +298,22 @@ def creer_evenement(request):
             status=status.HTTP_400_BAD_REQUEST
         )
 
+    if data.get('event_type') not in Event.EventType.values:
+        return Response({'detail': "Type d'événement invalide."}, status=status.HTTP_400_BAD_REQUEST)
+
+    visibility = data.get('visibility', 'public')
+    if visibility not in VISIBILITIES:
+        return Response({'detail': 'Visibilité invalide (public ou private).'}, status=status.HTTP_400_BAD_REQUEST)
+
+    # ── Billetterie & dress code (M23) + type libre et palette ────
+    ticketing, ticket_errors = clean_ticketing(data)
+    style, style_errors = clean_style(data, data.get('event_type'))
+    ticket_errors.update(style_errors)
+    ticketing.update(style)
+    if ticket_errors:
+        first = next(iter(ticket_errors.values()))
+        return Response({'detail': first, **ticket_errors}, status=status.HTTP_400_BAD_REQUEST)
+
     # ── Génération du subdomain unique ───────────────────────────
     # slugify("Mon Mariage 2026") → "mon-mariage-2026"
     # On ajoute un compteur si le slug existe déjà
@@ -303,7 +327,7 @@ def creer_evenement(request):
     try:
         event = Event.objects.create(
             organizer        = request.user,
-            title            = data['title'],
+            title            = str(data['title']).strip()[:100],
             event_type       = data['event_type'],
             description      = data.get('description', ''),
             start_date       = start_date_parsed,
@@ -314,23 +338,23 @@ def creer_evenement(request):
             is_online        = data.get('is_online', False),
             online_link      = data.get('online_link'),
             cover_image      = data.get('cover_image'),
-            ambiance         = data.get('ambiance', ''),
-            palette          = data.get('palette'),
-            visibility       = data.get('visibility', 'draft'),
+            visibility       = visibility,
             status           = 'draft',  # Toujours brouillon à la création
             subdomain        = subdomain,
             template_config  = data.get('template_config'),
+            **ticketing,
         )
 
-        serializer = EventPublicSerializer(event)
+        serializer = EventPublicSerializer(event, context={'request': request})
         return Response({
             'message': 'Événement créé avec succès.',
             'event':   serializer.data,
         }, status=status.HTTP_201_CREATED)
 
-    except Exception as e:
+    except Exception:
+        logger.exception("Erreur lors de la création d'un événement")
         return Response(
-            {'detail': f'Erreur lors de la création : {str(e)}'},
+            {'detail': "Impossible de créer l'événement pour le moment. Réessayez."},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
@@ -366,7 +390,7 @@ def detail_evenement_organisateur(request, event_id):
         'total':     event.invitations.exclude(status='revoked').count(),
     }
 
-    serializer = EventPublicSerializer(event)
+    serializer = EventPublicSerializer(event, context={'request': request})
     return Response({
         'event':       serializer.data,
         'invitations': invitations_count,
@@ -407,9 +431,10 @@ def modifier_evenement(request, event_id):
     if 'is_online'        in data: event.is_online        = data['is_online']
     if 'online_link'      in data: event.online_link      = data['online_link']
     if 'cover_image'      in data: event.cover_image      = data['cover_image']
-    if 'ambiance'         in data: event.ambiance         = data['ambiance']
-    if 'palette'          in data: event.palette          = data['palette']
-    if 'visibility'       in data: event.visibility       = data['visibility']
+    if 'visibility'       in data:
+        if data['visibility'] not in VISIBILITIES:
+            return Response({'detail': 'Visibilité invalide (public ou private).'}, status=status.HTTP_400_BAD_REQUEST)
+        event.visibility = data['visibility']
     if 'template_config'  in data: event.template_config  = data['template_config']
 
     if 'start_date' in data:
@@ -420,9 +445,22 @@ def modifier_evenement(request, event_id):
         parsed = parse_datetime(data['end_date'])
         if parsed: event.end_date = parsed
 
+    # Billetterie & dress code, type libre et palette
+    if 'event_type' in data and data['event_type'] not in Event.EventType.values:
+        return Response({'detail': "Type d'événement invalide."}, status=status.HTTP_400_BAD_REQUEST)
+    ticketing, ticket_errors = clean_ticketing(data, current=event)
+    style, style_errors = clean_style(data, data.get('event_type', event.event_type))
+    ticket_errors.update(style_errors)
+    ticketing.update(style)
+    if ticket_errors:
+        first = next(iter(ticket_errors.values()))
+        return Response({'detail': first, **ticket_errors}, status=status.HTTP_400_BAD_REQUEST)
+    for field, value in ticketing.items():
+        setattr(event, field, value)
+
     event.save()
 
-    serializer = EventPublicSerializer(event)
+    serializer = EventPublicSerializer(event, context={'request': request})
     return Response({
         'message': 'Événement modifié avec succès.',
         'event':   serializer.data,
@@ -721,7 +759,7 @@ L'équipe Easevent
             send_mail(
                 subject        = subject,
                 message        = message,
-                from_email     = 'dosyca35@gmail.com',
+                from_email     = settings.DEFAULT_FROM_EMAIL,
                 recipient_list = [email],
                 fail_silently  = True,  # Ne pas planter si l'email échoue
             )

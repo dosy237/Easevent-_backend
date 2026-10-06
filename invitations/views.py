@@ -28,7 +28,7 @@ def mes_invitations(request):
         status__in = ['revoked', 'expired']
     ).select_related('event').order_by('-sent_at')
 
-    serializer = InvitationSerializer(invitations, many=True)
+    serializer = InvitationSerializer(invitations, many=True, context={'request': request})
     return Response({
         'count':       invitations.count(),
         'invitations': serializer.data,
@@ -61,8 +61,32 @@ def repondre_invitation(request, invitation_id):
             status=status.HTTP_400_BAD_REQUEST
         )
 
+    if invitation.status in ('revoked', 'expired') or not invitation.is_valid:
+        return Response({'detail': "Cette invitation n'est plus valable."}, status=status.HTTP_400_BAD_REQUEST)
+
+    from tickets.models import Ticket
+    from tickets.services import TicketError, cancel_ticket, create_pending_ticket
+
+    ticket = None
+    if new_status == 'confirmed':
+        # Accepter crée le ticket « en attente » à valider dans Mes tickets (MVP §5)
+        try:
+            ticket, _ = create_pending_ticket(invitation.event, request.user, invitation=invitation)
+        except TicketError as exc:
+            return Response({'detail': exc.message, 'code': exc.code}, status=exc.status)
+    else:
+        for pending in Ticket.objects.filter(invitation=invitation, status=Ticket.Status.PENDING):
+            try:
+                cancel_ticket(pending)
+            except TicketError:
+                pass
+
     invitation.status       = new_status
     invitation.responded_at = timezone.now()
     invitation.save()
 
-    return Response({'detail': f'Invitation {new_status}.', 'status': new_status})
+    return Response({
+        'detail':    f'Invitation {new_status}.',
+        'status':    new_status,
+        'ticket_id': str(ticket.id) if ticket else None,
+    })

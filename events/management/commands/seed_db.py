@@ -2,6 +2,7 @@ from django.core.management.base import BaseCommand
 from django.utils import timezone
 from users.models import User
 from events.models import Event, EventCollaborator
+from events.demo_covers import cover_for
 from invitations.models import Invitation
 from django.utils.text import slugify
 from datetime import timedelta
@@ -44,16 +45,6 @@ class Command(BaseCommand):
         # ─────────────────────────────────────────────────
         # 2. IMAGES & TYPES
         # ─────────────────────────────────────────────────
-        import os
-        import shutil
-        from django.conf import settings
-        
-        img_dir = os.path.join(settings.BASE_DIR, 'seed', 'images')
-        media_events_dir = os.path.join(settings.MEDIA_ROOT, 'events')
-        os.makedirs(media_events_dir, exist_ok=True)
-        
-        images = [f for f in os.listdir(img_dir) if f.endswith(('.png', '.jpg', '.jpeg'))]
-        
         event_types = [
             (Event.EventType.MARIAGE, "Cérémonie de Mariage", ["Sarah & Marc", "Pauline & Kevin", "Aicha & Omar", "Bella & Junior", "Cathy & David"]),
             (Event.EventType.CONFERENCE, "Conférence Tech", ["AI Summit 2026", "Web 3.0 Africa", "Django Masterclass", "Cloud Expo", "Startup Day"]),
@@ -78,17 +69,9 @@ class Command(BaseCommand):
             for i in range(5):
                 user = random.choice(users)
                 title = f"{base_title} : {suffixes[i]}"
-                img_name = images[(count) % len(images)] if images else None
-                
-                relative_img_path = None
-                if img_name:
-                    source_path = os.path.join(img_dir, img_name)
-                    # Create a unique name to avoid conflicts if needed, but here we just copy
-                    dest_name = f"seed_{count}_{img_name}"
-                    dest_path = os.path.join(media_events_dir, dest_name)
-                    shutil.copy(source_path, dest_path)
-                    relative_img_path = f"events/{dest_name}"
-                
+                # Couverture cohérente avec le type et le titre (events/demo_covers.py)
+                relative_img_path = cover_for(e_type, title)
+
                 event = Event.objects.create(
                     organizer=user,
                     title=title,

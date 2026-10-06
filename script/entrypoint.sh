@@ -7,6 +7,9 @@ sleep 5
 echo "🛠️ Running migrations..."
 python manage.py migrate --noinput
 
+echo "🖼️ Demo event covers..."
+python manage.py fix_demo_covers || true
+
 echo "📦 Collecting static files..."
 python manage.py collectstatic --noinput --clear
 

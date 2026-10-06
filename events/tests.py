@@ -240,3 +240,132 @@ class EventAPITest(TestCase):
         self.client.credentials()
         response = self.client.get('/api/events/mes-evenements/')
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+# ─────────────────────────────────────────────────────────────
+# CLASSE 3 — Billetterie & dress code (M23)
+# ─────────────────────────────────────────────────────────────
+from django.core.cache import cache
+
+
+class TicketingFieldsTest(TestCase):
+
+    def setUp(self):
+        cache.clear()
+        self.client = APIClient()
+        self.user = User.objects.create_user(email='orga@easevent.fr', password='x', first_name='O', last_name='R')
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {RefreshToken.for_user(self.user).access_token}')
+        start = timezone.now() + timedelta(days=10)
+        self.base = {
+            'title': 'Summit Innovation AI', 'event_type': 'conference', 'description': 'd',
+            'start_date': start.strftime('%Y-%m-%dT%H:%M:%S'),
+            'end_date': (start + timedelta(hours=8)).strftime('%Y-%m-%dT%H:%M:%S'),
+            'location_address': 'Station F', 'visibility': 'public',
+        }
+
+    def _create(self, **extra):
+        return self.client.post('/api/events/create/', {**self.base, **extra}, format='json')
+
+    def test_evenement_payant(self):
+        r = self._create(is_paid=True, price='25,00', currency='EUR', max_guests=250,
+                         dress_code='Business — veste conseillée')
+        self.assertEqual(r.status_code, status.HTTP_201_CREATED, r.data)
+        e = r.data['event']
+        self.assertTrue(e['is_paid'])
+        self.assertEqual(e['price'], '25.00')
+        self.assertEqual(e['max_guests'], 250)
+        self.assertEqual(e['dress_code'], 'Business — veste conseillée')
+
+    def test_evenement_gratuit_prix_zero(self):
+        r = self._create(is_paid=False, price='40')
+        self.assertEqual(r.data['event']['price'], '0.00')
+        self.assertFalse(r.data['event']['is_paid'])
+
+    def test_payant_sans_prix_refuse(self):
+        r = self._create(is_paid=True, price='')
+        self.assertEqual(r.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('price', r.data)
+
+    def test_valeurs_invalides(self):
+        self.assertEqual(self._create(is_paid=True, price='-3').status_code, 400)
+        self.assertEqual(self._create(max_guests=0).status_code, 400)
+        self.assertEqual(self._create(dress_code='x' * 81).status_code, 400)
+        self.assertEqual(self._create(dress_code='<b>chic</b>').status_code, 400)
+        self.assertEqual(self._create(visibility='secret').status_code, 400)
+
+    def test_compatibilite_template_config(self):
+        r = self._create(template_config={'is_paid': True, 'price': 12.5, 'max_guests': 40})
+        self.assertEqual(r.data['event']['price'], '12.50')
+        self.assertEqual(r.data['event']['max_guests'], 40)
+
+    def test_modification_partielle_conserve_le_prix(self):
+        event_id = self._create(is_paid=True, price='25').data['event']['id']
+        r = self.client.patch(f'/api/events/{event_id}/update/', {'dress_code': 'Tenue de soirée'}, format='json')
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.data['event']['price'], '25.00')
+        self.assertEqual(r.data['event']['dress_code'], 'Tenue de soirée')
+        r = self.client.patch(f'/api/events/{event_id}/update/', {'is_paid': False}, format='json')
+        self.assertEqual(r.data['event']['price'], '0.00')
+
+
+class StyleFieldsTest(TicketingFieldsTest):
+    """Type libre (« Autre ») et palette de couleurs libre."""
+
+    def test_type_personnalise(self):
+        r = self._create(event_type='autre', event_type_label='Baptême')
+        self.assertEqual(r.status_code, 201, r.data)
+        self.assertEqual(r.data['event']['event_type_label'], 'Baptême')
+        self.assertEqual(r.data['event']['event_type_display'], 'Baptême')
+
+    def test_autre_sans_nom_refuse(self):
+        self.assertEqual(self._create(event_type='autre').status_code, 400)
+
+    def test_type_predefini_ignore_le_libelle(self):
+        r = self._create(event_type='gala', event_type_label='Truc')
+        self.assertEqual(r.data['event']['event_type_label'], '')
+        self.assertEqual(r.data['event']['event_type_display'], 'Gala')
+
+    def test_palette_libre(self):
+        r = self._create(palette={'primary': '#ff00aa', 'secondary': '#123456'})
+        self.assertEqual(r.data['event']['palette'], {'primary': '#FF00AA', 'secondary': '#123456'})
+
+    def test_palette_invalide(self):
+        self.assertEqual(self._create(palette={'primary': 'red'}).status_code, 400)
+        self.assertEqual(self._create(palette={'primary': 'url(javascript:x)'}).status_code, 400)
+
+
+class CustomAmbianceAndDemoCoversTest(TicketingFieldsTest):
+
+    def test_ambiance_personnalisee(self):
+        r = self._create(ambiance='autre', ambiance_label='Bohème')
+        self.assertEqual(r.status_code, 201, r.data)
+        self.assertEqual(r.data['event']['ambiance_label'], 'Bohème')
+        self.assertEqual(self._create(ambiance='autre').status_code, 400)
+        self.assertEqual(self._create(ambiance='inconnue').status_code, 400)
+
+    def test_couverture_coherente(self):
+        from events.demo_covers import cover_for
+        self.assertRegex(cover_for('conference', 'Conférence Tech : Django Masterclass'), r'/photos/(conference|seminaire)-')
+        self.assertIn('/photos/tech-', cover_for('exposition', "Exposition d'Art : Digital Art"))
+        self.assertIn('/photos/cuisine-', cover_for('atelier', 'Masterclass Cuisine'))
+        self.assertIn('/photos/mariage-', cover_for('mariage', 'Sarah & Marc'))
+        self.assertRegex(cover_for('anniversaire', 'Les 30 ans'), r'/static/app/covers/anniversaire-[123]\.jpg$')
+
+    def test_commande_corrige_les_evenements_de_demo(self):
+        from django.core.management import call_command
+        demo = Event.objects.create(organizer=self.user, title='Live Concert : Afro-Jazz Night', event_type='concert',
+                                    start_date=timezone.now(), end_date=timezone.now() + timedelta(hours=2),
+                                    cover_image='events/seed_3_chef.png')
+        upload = Event.objects.create(organizer=self.user, title='Mon mariage', event_type='mariage',
+                                      start_date=timezone.now(), end_date=timezone.now() + timedelta(hours=2),
+                                      cover_image='https://res.cloudinary.com/x/photo.jpg')
+        call_command('fix_demo_covers', stdout=open('/dev/null', 'w'))
+        demo.refresh_from_db(); upload.refresh_from_db()
+        self.assertEqual(demo.cover_image, '/static/app/covers/photos/concert-stade.jpg')
+        self.assertEqual(upload.cover_image, 'https://res.cloudinary.com/x/photo.jpg')
+
+    def test_url_absolue_de_la_couverture_statique(self):
+        from easevent.media import public_url
+        with self.settings(PUBLIC_BASE_URL='https://easevent.example.com'):
+            self.assertEqual(public_url('/static/app/covers/gala-1.jpg'),
+                             'https://easevent.example.com/static/app/covers/gala-1.jpg')

@@ -36,6 +36,10 @@ class EventPublicSerializer(serializers.ModelSerializer):
     # Calculée dans la view quand l'utilisateur partage sa position GPS.
     # Vaut None si la géolocalisation est désactivée.
     distance_km     = serializers.SerializerMethodField()
+    event_type_display = serializers.SerializerMethodField()
+    spots_left         = serializers.SerializerMethodField()
+    my_ticket          = serializers.SerializerMethodField()
+    organizer          = serializers.SerializerMethodField()
 
     class Meta:
         # model : quel modèle Django ce serializer traduit
@@ -49,6 +53,8 @@ class EventPublicSerializer(serializers.ModelSerializer):
             'id',
             'title',
             'event_type',
+            'event_type_label',    # type libre quand event_type = « autre »
+            'event_type_display',  # calculé — libellé à afficher
             'description',
             'date_formatted',   # calculé — ex: "13 JUIN"
             'start_date',
@@ -59,9 +65,24 @@ class EventPublicSerializer(serializers.ModelSerializer):
             'confirmed_count',  # calculé — nombre d'invités confirmés
             'view_count',
             'ambiance',
+            'ambiance_label',      # ambiance libre quand ambiance = « autre »
+            'palette',             # couleurs choisies librement {primary, secondary}
             'subdomain',
             'cover_image',      # calculé — URL de l'image de couverture
             'distance_km',      # calculé — distance en km (ou null)
+            # Billetterie (M23) — prix en chaîne décimale "25.00"
+            'is_paid',
+            'price',
+            'currency',
+            'max_guests',
+            'dress_code',
+            'visibility',
+            'status',
+            'is_online',
+            'online_link',
+            'spots_left',          # places restantes (null = illimité)
+            'my_ticket',           # ticket actif de l'utilisateur connecté (détail)
+            'organizer',           # nom de l'organisateur
         ]
 
     def get_date_formatted(self, obj):
@@ -99,13 +120,15 @@ class EventPublicSerializer(serializers.ModelSerializer):
         return obj.invitations.filter(status='confirmed').count()
 
     def get_cover_image(self, obj):
-        request = self.context.get('request')
-        url = None
+        """
+        URL ABSOLUE de l'image de couverture, servie par le backend
+        (ou Cloudinary pour les photos uploadées depuis l'application).
+        """
+        from easevent.media import public_url
 
-        # Priorité 0 : Champ image direct (uploadé ou seedé)
-        if obj.cover_image:
-            url = obj.cover_image
-        
+        # Priorité 0 : champ image direct (uploadé ou seedé)
+        url = obj.cover_image
+
         # Priorité 1 : photo uploadée et traitée via EventMedia
         if not url:
             media = obj.media.filter(
@@ -120,23 +143,33 @@ class EventPublicSerializer(serializers.ModelSerializer):
         if not url and obj.template_config:
             url = obj.template_config.get('cover_image')
 
-        if not url:
-            return None
+        return public_url(url, self.context.get('request'))
 
-        # Si c'est déjà une URL absolue, on la retourne
-        if url.startswith(('http://', 'https://')):
-            return url
-        
-        # Sinon, on construit l'URL absolue (pour les fichiers locaux dans /media/)
-        if request:
-            from django.conf import settings
-            # Si le chemin commence par 'events/', on s'assure qu'il est préfixé par MEDIA_URL
-            media_url = settings.MEDIA_URL
-            if not url.startswith(media_url):
-                url = f"{media_url}{url}"
-            return request.build_absolute_uri(url)
-        
-        return url
+    def get_event_type_display(self, obj):
+        """« Baptême » pour un type libre, sinon le libellé du type (« Conférence »)."""
+        if obj.event_type == 'autre' and obj.event_type_label:
+            return obj.event_type_label
+        return obj.get_event_type_display()
+
+    def get_spots_left(self, obj):
+        if not obj.max_guests:
+            return None
+        from tickets.services import spots_left
+        return spots_left(obj)
+
+    def get_my_ticket(self, obj):
+        """Uniquement dans les vues détail (context['with_my_ticket']) : évite N requêtes sur les listes."""
+        request = self.context.get('request')
+        if not self.context.get('with_my_ticket') or not request or not request.user.is_authenticated:
+            return None
+        from tickets.services import active_ticket
+        ticket = active_ticket(obj, request.user)
+        if not ticket:
+            return None
+        return {'id': str(ticket.id), 'status': ticket.status, 'payment_status': ticket.payment_status}
+
+    def get_organizer(self, obj):
+        return {'id': str(obj.organizer_id), 'name': obj.organizer.full_name}
 
     def get_distance_km(self, obj):
         """

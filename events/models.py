@@ -75,6 +75,7 @@ class Event(models.Model):
         MINIMALISTE   = 'minimaliste',   'Minimaliste'
         COLORE        = 'colore',        'Coloré'
         PROFESSIONNEL = 'professionnel', 'Professionnel'
+        AUTRE         = 'autre',         'Autre'
 
     # ── Clé primaire ──────────────────────────────────────────
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -95,6 +96,9 @@ class Event(models.Model):
     # ── Informations de base ──────────────────────────────────
     title       = models.CharField(max_length=100, verbose_name="Titre")
     event_type  = models.CharField(max_length=15, choices=EventType.choices, verbose_name="Type")
+    # Type libre saisi par l'organisateur quand il choisit « Autre »
+    # (ex. « Baptême », « Remise de diplômes »)
+    event_type_label = models.CharField(max_length=40, blank=True, default='', verbose_name="Type personnalisé")
     description = models.TextField(blank=True, default='', verbose_name="Description")
 
     # ── Dates ─────────────────────────────────────────────────
@@ -135,6 +139,8 @@ class Event(models.Model):
         verbose_name = "Palette de couleurs (générée par OpenCV)"
     )
     ambiance = models.CharField(max_length=15, choices=Ambiance.choices, blank=True, default='')
+    # Ambiance libre quand l'organisateur choisit « Autre » (ex. « Bohème »)
+    ambiance_label = models.CharField(max_length=40, blank=True, default='', verbose_name="Ambiance personnalisée")
 
     # ── Sous-domaine et domaine personnalisé ─────────────────
     subdomain = models.CharField(
@@ -164,6 +170,25 @@ class Event(models.Model):
         null         = True,
         verbose_name = "Image de couverture de l'événement"
     )
+
+    # ── Billetterie & dress code (MVP §5) ─────────────────────
+    # Chaque participant reçoit un ticket : 0,00 € si l'événement est gratuit.
+    is_paid = models.BooleanField(default=False, verbose_name="Événement payant")
+    price = models.DecimalField(
+        max_digits=8, decimal_places=2, default=0,
+        verbose_name="Prix du ticket",
+        help_text="0,00 si l'événement est gratuit",
+    )
+    currency = models.CharField(max_length=3, default='EUR', verbose_name="Devise (ISO 4217)")
+    max_guests = models.PositiveIntegerField(
+        null=True, blank=True, verbose_name="Nombre de places (vide = illimité)",
+    )
+    dress_code = models.CharField(
+        max_length=80, null=True, blank=True,
+        verbose_name="Dress code (ticket, détail, mini-site, email)",
+    )
+    # Modèle de mini-site choisi + sections (rempli au lot « mini-site IA »)
+    minisite_config = models.JSONField(null=True, blank=True, verbose_name="Configuration du mini-site")
 
     # ── Métriques ─────────────────────────────────────────────
     view_count = models.PositiveIntegerField(default=0, verbose_name="Nombre de vues")
