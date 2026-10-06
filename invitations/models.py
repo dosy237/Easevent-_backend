@@ -49,7 +49,15 @@ class Invitation(models.Model):
 
     class InvitationChannel(models.TextChoices):
         SMS           = 'sms',                   'SMS (via Twilio)'
+        EMAIL         = 'email',                 'Email (M30)'
         PLATFORM_NOTIF= 'platform_notification',  'Notification in-app'
+
+    class DeliveryStatus(models.TextChoices):
+        PENDING        = 'pending',        'En cours'
+        SENT           = 'sent',           'Envoyé'
+        FAILED         = 'failed',         'Échec'
+        NOT_CONFIGURED = 'not_configured', 'Canal non configuré'
+        IN_APP         = 'in_app',         "Dans l'application"
 
     id    = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     event = models.ForeignKey(
@@ -68,22 +76,33 @@ class Invitation(models.Model):
         related_name = 'received_invitations',
         verbose_name = "Membre invité (si inscrit sur Easevent)"
     )
-    # NOTE PRODUCTION : remplacer par EncryptedCharField
-    # from encrypted_fields.fields import EncryptedCharField
-    # pour le chiffrement AES-256 automatique (obligation RGPD)
+    # Numéro chiffré (voir invitations/crypto.py) + empreinte pour les doublons.
+    # Utiliser inv.phone (lecture) et inv.set_phone() (écriture).
     phone_number = models.CharField(
-        max_length   = 30,
+        max_length   = 255,
         blank        = True,
         null         = True,
-        verbose_name = "Numéro de téléphone (chiffré AES-256 en production)"
+        verbose_name = "Numéro de téléphone (chiffré)"
     )
+    phone_hash = models.CharField(max_length=64, null=True, blank=True, db_index=True,
+                                  verbose_name="Empreinte HMAC du numéro")
+
+    # Invitation par email d'une personne sans compte (M29 / M30)
+    email = models.EmailField(max_length=254, null=True, blank=True, verbose_name="Email invité")
+    # Nom facultatif (colonne « name » de l'import CSV)
+    contact_name = models.CharField(max_length=80, blank=True, default='', verbose_name="Nom du contact")
+    # Message personnalisé de l'organisateur (100 caractères, M12)
+    message = models.CharField(max_length=100, blank=True, default='', verbose_name="Message personnalisé")
 
     # ── Token d'accès unique ──────────────────────────────────
+    # Seule l'empreinte SHA-256 est stockée : une fuite de la base ne
+    # donne accès à aucune invitation. Le jeton en clair n'existe que
+    # dans le lien envoyé (email / SMS) ; une relance en crée un nouveau.
     token = models.CharField(
-        max_length   = 43,
+        max_length   = 64,
         unique       = True,
-        verbose_name = "Token URL-safe 256 bits",
-        help_text    = "Généré avec secrets.token_urlsafe(32)"
+        verbose_name = "Empreinte SHA-256 du token (256 bits)",
+        help_text    = "Jeton généré avec secrets.token_urlsafe(32), stocké haché"
     )
 
     # ── Statut et canal ───────────────────────────────────────
@@ -98,6 +117,11 @@ class Invitation(models.Model):
     responded_at = models.DateTimeField(null=True, blank=True, verbose_name="Date de réponse")
     expires_at   = models.DateTimeField(verbose_name="Date d'expiration (J+7 après la fin de l'événement)")
 
+    # ── Envoi et relances ─────────────────────────────────────
+    delivery_status = models.CharField(max_length=15, choices=DeliveryStatus.choices, default='pending')
+    reminded_at  = models.DateTimeField(null=True, blank=True, verbose_name="Dernière relance")
+    remind_count = models.PositiveSmallIntegerField(default=0)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -110,8 +134,18 @@ class Invitation(models.Model):
         ]
 
     def __str__(self):
-        dest = self.invited_user.full_name if self.invited_user else self.phone_number
+        dest = self.invited_user.full_name if self.invited_user else (self.email or 'SMS')
         return f"Invitation → {dest} | {self.event.title} ({self.status})"
+
+    @property
+    def phone(self):
+        from .crypto import decrypt
+        return decrypt(self.phone_number)
+
+    def set_phone(self, e164):
+        from .crypto import blind_index, encrypt
+        self.phone_number = encrypt(e164) if e164 else None
+        self.phone_hash = blind_index(e164) if e164 else None
 
     @property
     def is_valid(self):

@@ -1,0 +1,17 @@
+{% autoescape off %}{% if reminder %}RAPPEL — {% endif %}Bonjour{% if greeting_name %} {{ greeting_name }}{% endif %},
+
+{{ organizer_name }} vous invite à « {{ event_title }} ».
+{% if message %}
+« {{ message }} »
+{% endif %}
+Date : {{ date }}{% if location %}
+Lieu : {{ location }}{% endif %}
+Ticket : {{ price }}{% if dress_code %}
+Dress code : {{ dress_code }}{% endif %}
+
+Voir l'invitation : {{ url }}
+
+Ce lien est personnel. {% if is_member %}Ouvrez-le pour répondre dans l'application Easevent.{% else %}Vous créerez votre compte Easevent gratuit en 1 minute pour répondre.{% endif %}
+
+— Easevent (Eranis)
+{% endautoescape %}

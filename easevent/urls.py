@@ -10,6 +10,8 @@ from django.urls import path, include, re_path
 from django.views.static import serve as static_serve
 from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, SpectacularSwaggerView
 
+from invitations import organizer_views as guests, public_views as invitation_pages
+
 urlpatterns = [
     # Interface d'administration Django
     path('admin/', admin.site.urls), 
@@ -19,6 +21,14 @@ urlpatterns = [
     path('api/auth/',   include('users.urls')),
     path('api/invitations/', include('invitations.urls')),
     path('api/', include('tickets.urls')),
+
+    # Annuaire des membres (M12 mode Membres, M29)
+    path('api/users/search/', guests.search_users,  name='users-search'),
+    path('api/users/lookup/', guests.lookup_emails, name='users-lookup'),
+
+    # Pages web publiques : lien d'invitation (M31) et confidentialité
+    path('i/<str:token>/',     invitation_pages.invitation_page, name='invitation-page'),
+    path('confidentialite/',   invitation_pages.privacy_page,    name='privacy-page'),
 
     # Swagger / OpenAPI documentation
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),

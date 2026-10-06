@@ -6,11 +6,9 @@ from events.serializers import EventPublicSerializer
 
 class InvitationSerializer(serializers.ModelSerializer):
     """
-    Serializer pour les invitations.
+    Serializer pour les invitations reçues (Mes tickets › En attente).
     Inclut les détails de l'événement associé.
     """
-    # Inclure les détails complets de l'événement dans la réponse
-    # au lieu de juste l'ID — le front-end a besoin de tout
     event = EventPublicSerializer(read_only=True)
 
     class Meta:
@@ -20,6 +18,7 @@ class InvitationSerializer(serializers.ModelSerializer):
             'event',
             'status',
             'channel',
+            'message',
             'sent_at',
             'opened_at',
             'responded_at',
