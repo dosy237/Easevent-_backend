@@ -79,6 +79,7 @@ INSTALLED_APPS = [
     'analytics',
     'subscriptions',
     'tickets',
+    'notifications',
 ]
 
 # ─────────────────────────────────────────────────────────────

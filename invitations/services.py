@@ -380,6 +380,15 @@ def invite_batch(event, organizer, *, emails=(), phones=(), user_ids=(), message
 
     deliver(pairs, request)
 
+    # Membres : notification dans l'application (M17)
+    from notifications.models import Notification
+    from notifications.services import notify
+    for inv, _ in pairs:
+        if inv.invited_user_id:
+            notify(inv.invited_user, Notification.Type.INVITATION_RECEIVED, organizer.full_name,
+                   f'vous invite à {event.title}', actor=organizer, event=event, invitation=inv,
+                   dedupe_key=f'invitation:{inv.id}')
+
     return {
         'created': [{'id': str(inv.id), 'kind': {'platform_notification': 'member', 'email': 'email', 'sms': 'phone'}[inv.channel],
                      'label': display_name(inv), 'delivery_status': inv.delivery_status} for inv, _ in pairs],

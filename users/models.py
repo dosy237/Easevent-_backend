@@ -127,6 +127,8 @@ class User(AbstractBaseUser, PermissionsMixin):
         default      = False,
         verbose_name = "Accepte de recevoir les nouveautés par email"
     )
+    # Préférences de notification (M17) : {"reminders": bool, "daily_summary": bool}
+    notification_prefs = models.JSONField(default=dict, blank=True, verbose_name="Préférences de notification")
 
     # ── Abonnement actuel ─────────────────────────────────────
     subscription_plan = models.CharField(
