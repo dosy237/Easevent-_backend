@@ -44,11 +44,30 @@ services:
     networks:
       - mynetwork
 
+  # Tâches de fond : envoi des invitations (emails, SMS), rappels…
   celery:
     build: .
     image: easevent-backend
     container_name: celery
-    command: celery -A easevent worker -l info
+    command: celery -A easevent worker -l info --concurrency=2
+    restart: unless-stopped
+    volumes:
+      - .:/app
+    env_file:
+      - .env
+    depends_on:
+      - redis
+      - db
+    networks:
+      - mynetwork
+
+  # Planificateur : rappels (chaque heure), bilan du jour (20:00), ménage (03:30)
+  celery-beat:
+    build: .
+    image: easevent-backend
+    container_name: celery-beat
+    command: celery -A easevent beat -l info --schedule /tmp/celerybeat-schedule
+    restart: unless-stopped
     volumes:
       - .:/app
     env_file:

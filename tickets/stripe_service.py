@@ -192,6 +192,14 @@ def _ticket_from_session(session):
     return Ticket.objects.select_related('event').filter(pk=ticket_id).first()
 
 
+def _notify_payment_failed(ticket):
+    from notifications.models import Notification
+    from notifications.services import notify
+    notify(ticket.user, Notification.Type.PAYMENT_FAILED, 'Paiement non abouti',
+           f'pour {ticket.event.title}. Votre ticket reste en attente : vous pouvez réessayer.',
+           event=ticket.event, ticket=ticket, dedupe_key=f'payment-failed:{ticket.id}')
+
+
 def handle_event(event):
     """Traite un événement Stripe déjà vérifié. Idempotent."""
     kind = event['type']
@@ -215,8 +223,9 @@ def handle_event(event):
             Ticket.objects.filter(pk=ticket.pk, status=Ticket.Status.PENDING).update(
                 payment_status=Ticket.PaymentStatus.PROCESSING)
         elif kind == 'checkout.session.async_payment_failed':
-            Ticket.objects.filter(pk=ticket.pk, status=Ticket.Status.PENDING).update(
-                payment_status=Ticket.PaymentStatus.FAILED)
+            if Ticket.objects.filter(pk=ticket.pk, status=Ticket.Status.PENDING).update(
+                    payment_status=Ticket.PaymentStatus.FAILED):
+                _notify_payment_failed(ticket)
         elif kind == 'checkout.session.expired':
             Ticket.objects.filter(pk=ticket.pk, status=Ticket.Status.PENDING,
                                   payment_status=Ticket.PaymentStatus.PENDING).update(

@@ -85,6 +85,14 @@ def repondre_invitation(request, invitation_id):
     invitation.responded_at = timezone.now()
     invitation.save()
 
+    if ticket is not None and ticket.status == Ticket.Status.PENDING:
+        from notifications.models import Notification
+        from notifications.services import notify
+        notify(request.user, Notification.Type.TICKET_TO_VALIDATE, 'Invitation acceptée.',
+               f'Validez votre ticket pour {invitation.event.title} dans Mes tickets.',
+               event=invitation.event, invitation=invitation, ticket=ticket,
+               dedupe_key=f'to-validate:{ticket.id}')
+
     return Response({
         'detail':    f'Invitation {new_status}.',
         'status':    new_status,

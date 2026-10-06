@@ -49,3 +49,36 @@ Pour les activer, ajouter au `.env` du serveur :
 
 Gratuit 50, Standard 500, Pro illimité (cahier des charges). Réglage : `PLAN_GUEST_LIMITS`
 dans `easevent/settings.py`.
+
+## 6. Celery (tâches de fond et planificateur)
+
+Déjà dans `docker-compose.yml` : `celery` (worker) et `celery-beat` (planificateur).
+Ils démarrent avec `docker compose up -d --build` (déploiement automatique).
+
+- [ ] Dans le `.env` du serveur : `REDIS_URL=redis://redis:6379/0`
+      (dans Docker, `localhost` désigne le conteneur lui-même, pas Redis).
+- [ ] Après déploiement, vérifier : `docker compose ps` → `web`, `celery`, `celery-beat`, `redis` « Up ».
+- [ ] Journaux : `docker compose logs -f celery celery-beat`.
+
+Tâches :
+| Tâche | Quand | Rôle |
+|---|---|---|
+| `invitations.tasks.send_invitations` | à chaque envoi / relance | emails M30 + SMS en arrière-plan |
+| `invitations.tasks.retry_stuck_deliveries` | toutes les 10 min | rattrape un envoi resté « en cours » |
+| `notifications.tasks.send_event_reminders` | toutes les heures | rappels J-7 / J-1 / jour J + email la veille |
+| `notifications.tasks.send_daily_summaries` | 20:00 | bilan des confirmations (organisateurs) |
+| `notifications.tasks.nightly_cleanup` | 03:30 | tickets / invitations expirés, notifications > 90 jours |
+
+Si Redis ne répond pas, les invitations partent directement (plus lent, jamais perdu).
+Si le worker est arrêté, la liste des invités (M13) envoie les invitations bloquées
+depuis plus de 10 minutes, et les rappels / bilans sont calculés à l'ouverture de l'app.
+
+## 7. Adresse publique du serveur
+
+- [ ] `PUBLIC_BASE_URL=https://easevent.nitypulse.com` (en **https**) : utilisée dans les liens
+      des emails (invitations, rappels), des PDF et des retours Stripe, y compris depuis Celery.
+
+## 8. Plus tard : notifications push (application fermée)
+
+- [ ] Projet Firebase + `google-services.json` (Android) et compte Expo (EAS) pour les jetons push.
+      Les tâches Celery existantes enverront alors aussi les push.

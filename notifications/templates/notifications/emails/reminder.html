@@ -1,0 +1,15 @@
+{% extends "users/emails/base_email.html" %}
+{% block content %}
+  <h2 style="color:#1B6E4B;margin-top:0;">C'est demain{% if first_name %}, {{ first_name }}{% endif %} !</h2>
+  {% if cover_url %}<img src="{{ cover_url }}" width="540" alt="Visuel de l'événement {{ event_title }}" style="display:block;width:100%;height:auto;border-radius:12px;margin:0 0 16px;">{% endif %}
+  <p style="font-size:18px;font-weight:800;margin:0 0 12px;">{{ event_title }}</p>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F7F7F7;border-radius:12px;font-size:14px;">
+    <tr><td style="padding:12px 14px 4px;color:#757575;">Date</td><td align="right" style="padding:12px 14px 4px;font-weight:600;">{{ date }}</td></tr>
+    {% if location %}<tr><td style="padding:4px 14px;color:#757575;">Lieu</td><td align="right" style="padding:4px 14px;font-weight:600;">{{ location }}</td></tr>{% endif %}
+    {% if dress_code %}<tr><td style="padding:4px 14px;color:#757575;">Dress code</td><td align="right" style="padding:4px 14px;font-weight:600;">{{ dress_code }}</td></tr>{% endif %}
+    {% if ticket_number %}<tr><td style="padding:4px 14px 12px;color:#757575;">Ticket</td><td align="right" style="padding:4px 14px 12px;font-weight:600;">{{ ticket_number }}</td></tr>{% endif %}
+  </table>
+  <p style="margin-top:20px;">Votre ticket et son QR code sont dans l'application Easevent, onglet « Tickets ». Présentez-le à l'entrée.</p>
+  {% if online_link %}<p>Lien de connexion : <a href="{{ online_link }}" style="color:#1B6E4B;">{{ online_link }}</a></p>{% endif %}
+  <p style="font-size:13px;color:#777777;margin-top:24px;">Vous pouvez désactiver ces rappels dans l'application : Notifications › Préférences.</p>
+{% endblock %}

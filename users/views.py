@@ -614,6 +614,12 @@ def export_data_view(request):
                 'responded_at': inv.responded_at.isoformat() if inv.responded_at else None,
             } for inv in invitations
         ],
+        'notification_preferences': user.notification_prefs or {},
+        'notifications': [
+            {'type': n.type, 'text': f'{n.title} {n.body}'.strip(), 'created_at': n.created_at.isoformat(),
+             'read': n.read_at is not None}
+            for n in user.notifications.all()[:500]
+        ],
     }
     response = Response(export)
     response['Content-Disposition'] = 'attachment; filename="easevent-mes-donnees.json"'

@@ -119,6 +119,15 @@ def generate_ticket(ticket, payment_status):
             from invitations.models import Invitation
             Invitation.objects.filter(pk=ticket.invitation_id).exclude(status='confirmed').update(
                 status='confirmed', responded_at=timezone.now())
+
+        from notifications.models import Notification
+        from notifications.services import notify_on_commit
+        paid = payment_status == Ticket.PaymentStatus.PAID
+        notify_on_commit(
+            ticket.user, Notification.Type.TICKET_GENERATED, 'Ticket généré',
+            f"pour {event.title}{' · paiement reçu' if paid else ''}. Présentez le QR code à l'entrée.",
+            event=event, ticket=ticket, dedupe_key=f'ticket-generated:{ticket.id}',
+        )
     return ticket
 
 
