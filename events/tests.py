@@ -345,9 +345,11 @@ class CustomAmbianceAndDemoCoversTest(TicketingFieldsTest):
 
     def test_couverture_coherente(self):
         from events.demo_covers import cover_for
-        self.assertIn('/photos/tech-', cover_for('conference', 'Conférence Tech : Django Masterclass'))
+        self.assertRegex(cover_for('conference', 'Conférence Tech : Django Masterclass'), r'/photos/(conference|seminaire)-')
+        self.assertIn('/photos/tech-', cover_for('exposition', "Exposition d'Art : Digital Art"))
         self.assertIn('/photos/cuisine-', cover_for('atelier', 'Masterclass Cuisine'))
-        self.assertRegex(cover_for('mariage', 'Sarah & Marc'), r'/static/app/covers/mariage-[123]\.jpg$')
+        self.assertIn('/photos/mariage-', cover_for('mariage', 'Sarah & Marc'))
+        self.assertRegex(cover_for('anniversaire', 'Les 30 ans'), r'/static/app/covers/anniversaire-[123]\.jpg$')
 
     def test_commande_corrige_les_evenements_de_demo(self):
         from django.core.management import call_command
@@ -359,7 +361,7 @@ class CustomAmbianceAndDemoCoversTest(TicketingFieldsTest):
                                       cover_image='https://res.cloudinary.com/x/photo.jpg')
         call_command('fix_demo_covers', stdout=open('/dev/null', 'w'))
         demo.refresh_from_db(); upload.refresh_from_db()
-        self.assertRegex(demo.cover_image, r'^/static/app/covers/concert-[123]\.jpg$')
+        self.assertEqual(demo.cover_image, '/static/app/covers/photos/concert-stade.jpg')
         self.assertEqual(upload.cover_image, 'https://res.cloudinary.com/x/photo.jpg')
 
     def test_url_absolue_de_la_couverture_statique(self):
