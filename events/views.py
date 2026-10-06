@@ -338,7 +338,6 @@ def creer_evenement(request):
             is_online        = data.get('is_online', False),
             online_link      = data.get('online_link'),
             cover_image      = data.get('cover_image'),
-            ambiance         = data.get('ambiance', ''),
             visibility       = visibility,
             status           = 'draft',  # Toujours brouillon à la création
             subdomain        = subdomain,
@@ -432,7 +431,6 @@ def modifier_evenement(request, event_id):
     if 'is_online'        in data: event.is_online        = data['is_online']
     if 'online_link'      in data: event.online_link      = data['online_link']
     if 'cover_image'      in data: event.cover_image      = data['cover_image']
-    if 'ambiance'         in data: event.ambiance         = data['ambiance']
     if 'visibility'       in data:
         if data['visibility'] not in VISIBILITIES:
             return Response({'detail': 'Visibilité invalide (public ou private).'}, status=status.HTTP_400_BAD_REQUEST)

@@ -332,3 +332,38 @@ class StyleFieldsTest(TicketingFieldsTest):
     def test_palette_invalide(self):
         self.assertEqual(self._create(palette={'primary': 'red'}).status_code, 400)
         self.assertEqual(self._create(palette={'primary': 'url(javascript:x)'}).status_code, 400)
+
+
+class CustomAmbianceAndDemoCoversTest(TicketingFieldsTest):
+
+    def test_ambiance_personnalisee(self):
+        r = self._create(ambiance='autre', ambiance_label='Bohème')
+        self.assertEqual(r.status_code, 201, r.data)
+        self.assertEqual(r.data['event']['ambiance_label'], 'Bohème')
+        self.assertEqual(self._create(ambiance='autre').status_code, 400)
+        self.assertEqual(self._create(ambiance='inconnue').status_code, 400)
+
+    def test_couverture_coherente(self):
+        from events.demo_covers import cover_for
+        self.assertIn('/photos/tech-', cover_for('conference', 'Conférence Tech : Django Masterclass'))
+        self.assertIn('/photos/cuisine-', cover_for('atelier', 'Masterclass Cuisine'))
+        self.assertRegex(cover_for('mariage', 'Sarah & Marc'), r'/static/app/covers/mariage-[123]\.jpg$')
+
+    def test_commande_corrige_les_evenements_de_demo(self):
+        from django.core.management import call_command
+        demo = Event.objects.create(organizer=self.user, title='Live Concert : Afro-Jazz Night', event_type='concert',
+                                    start_date=timezone.now(), end_date=timezone.now() + timedelta(hours=2),
+                                    cover_image='events/seed_3_chef.png')
+        upload = Event.objects.create(organizer=self.user, title='Mon mariage', event_type='mariage',
+                                      start_date=timezone.now(), end_date=timezone.now() + timedelta(hours=2),
+                                      cover_image='https://res.cloudinary.com/x/photo.jpg')
+        call_command('fix_demo_covers', stdout=open('/dev/null', 'w'))
+        demo.refresh_from_db(); upload.refresh_from_db()
+        self.assertRegex(demo.cover_image, r'^/static/app/covers/concert-[123]\.jpg$')
+        self.assertEqual(upload.cover_image, 'https://res.cloudinary.com/x/photo.jpg')
+
+    def test_url_absolue_de_la_couverture_statique(self):
+        from easevent.media import public_url
+        with self.settings(PUBLIC_BASE_URL='https://easevent.example.com'):
+            self.assertEqual(public_url('/static/app/covers/gala-1.jpg'),
+                             'https://easevent.example.com/static/app/covers/gala-1.jpg')

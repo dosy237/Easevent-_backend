@@ -20,8 +20,10 @@ def public_url(path_or_url, request=None):
         return path_or_url
 
     path = path_or_url.lstrip('/')
+    static_prefix = settings.STATIC_URL.strip('/') + '/'
     media_prefix = settings.MEDIA_URL.strip('/') + '/'
-    if not path.startswith(media_prefix):
+    # Fichiers statiques (couvertures de démo, illustrations) laissés tels quels
+    if not path.startswith((media_prefix, static_prefix)):
         path = media_prefix + path
     path = '/' + path
 

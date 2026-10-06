@@ -75,6 +75,7 @@ class Event(models.Model):
         MINIMALISTE   = 'minimaliste',   'Minimaliste'
         COLORE        = 'colore',        'Coloré'
         PROFESSIONNEL = 'professionnel', 'Professionnel'
+        AUTRE         = 'autre',         'Autre'
 
     # ── Clé primaire ──────────────────────────────────────────
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -138,6 +139,8 @@ class Event(models.Model):
         verbose_name = "Palette de couleurs (générée par OpenCV)"
     )
     ambiance = models.CharField(max_length=15, choices=Ambiance.choices, blank=True, default='')
+    # Ambiance libre quand l'organisateur choisit « Autre » (ex. « Bohème »)
+    ambiance_label = models.CharField(max_length=40, blank=True, default='', verbose_name="Ambiance personnalisée")
 
     # ── Sous-domaine et domaine personnalisé ─────────────────
     subdomain = models.CharField(

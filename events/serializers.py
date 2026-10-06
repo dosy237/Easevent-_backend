@@ -62,6 +62,7 @@ class EventPublicSerializer(serializers.ModelSerializer):
             'confirmed_count',  # calculé — nombre d'invités confirmés
             'view_count',
             'ambiance',
+            'ambiance_label',      # ambiance libre quand ambiance = « autre »
             'palette',             # couleurs choisies librement {primary, secondary}
             'subdomain',
             'cover_image',      # calculé — URL de l'image de couverture

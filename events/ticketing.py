@@ -117,6 +117,19 @@ def clean_style(data, event_type):
         # Un type prédéfini n'a pas de libellé personnalisé
         out['event_type_label'] = label if event_type == 'autre' else ''
 
+    if 'ambiance' in data or 'ambiance_label' in data:
+        ambiance = str(data.get('ambiance') or '')
+        allowed = {'', 'elegant', 'festif', 'minimaliste', 'colore', 'professionnel', 'autre'}
+        if ambiance not in allowed:
+            errors['ambiance'] = 'Ambiance invalide.'
+        label = str(data.get('ambiance_label') or '').strip()
+        if ambiance == 'autre' and not label:
+            errors['ambiance_label'] = "Décrivez l'ambiance de votre événement."
+        elif len(label) > 40 or any(ch in label for ch in '<>{}'):
+            errors['ambiance_label'] = "L'ambiance fait 40 caractères maximum, sans caractères spéciaux."
+        out['ambiance'] = ambiance
+        out['ambiance_label'] = label if ambiance == 'autre' else ''
+
     if 'palette' in data and data.get('palette') is not None:
         palette = data.get('palette')
         if not isinstance(palette, dict):
