@@ -7,6 +7,7 @@ Production-ready pour Render.com
 """
 
 import os
+import sys
 from pathlib import Path
 from decouple import config
 from datetime import timedelta
@@ -22,6 +23,13 @@ DEBUG = config('DEBUG', default=False, cast=bool)
 
 ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1').split(',')
 BASE_URL = config('BASE_URL', default='http://127.0.0.1:8003')
+
+# URL publique de l'application (Expo web). Les liens envoyés par email
+# (vérification, mot de passe, invitations) pointent vers elle pour ouvrir
+# l'application. Vide → les liens pointent vers les pages HTML du backend.
+FRONTEND_URL = config('FRONTEND_URL', default='').rstrip('/')
+
+TESTING = 'test' in sys.argv
 
 # En-tête proxy SSL (obligatoire sur Render)
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
@@ -56,6 +64,7 @@ INSTALLED_APPS = [
     'django.contrib.postgres',
     'rest_framework',
     'rest_framework_simplejwt',
+    'rest_framework_simplejwt.token_blacklist',
     'corsheaders',
     'drf_spectacular',
     'whitenoise.runserver_nostatic',
@@ -129,7 +138,45 @@ REST_FRAMEWORK = {
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 20,
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+    # OWASP API4 — limitation du nombre de requêtes (anti force brute / abus)
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon':           '120/min',
+        'user':           '600/min',
+        'auth_login':     '10/min',
+        'auth_register':  '10/hour',
+        'auth_email':     '6/hour',
+        'password_reset': '6/hour',
+    },
 }
+
+# ─────────────────────────────────────────────────────────────
+# MOTS DE PASSE (OWASP A07)
+# Argon2id en premier : les anciens hachages PBKDF2 sont migrés
+# automatiquement à la prochaine connexion de l'utilisateur.
+# ─────────────────────────────────────────────────────────────
+PASSWORD_HASHERS = [
+    'django.contrib.auth.hashers.Argon2PasswordHasher',
+    'django.contrib.auth.hashers.PBKDF2PasswordHasher',
+    'django.contrib.auth.hashers.PBKDF2SHA1PasswordHasher',
+    'django.contrib.auth.hashers.ScryptPasswordHasher',
+]
+if TESTING:
+    # Hachage rapide uniquement pour la suite de tests
+    PASSWORD_HASHERS = ['django.contrib.auth.hashers.MD5PasswordHasher']
+
+AUTH_PASSWORD_VALIDATORS = [
+    {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator', 'OPTIONS': {'min_length': 8}},
+    {'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
+]
+
+# Lien de réinitialisation du mot de passe valable 1 heure
+PASSWORD_RESET_TIMEOUT = 60 * 60
 
 
 SIMPLE_JWT = {
@@ -153,6 +200,8 @@ CACHES = {
         'LOCATION': REDIS_URL,
     }
 }
+if TESTING:
+    CACHES = {'default': {'BACKEND': 'django.core.cache.backends.locmem.LocMemCache'}}
 
 CELERY_BROKER_URL = REDIS_URL
 CELERY_RESULT_BACKEND = REDIS_URL
@@ -183,7 +232,7 @@ USE_TZ = True
 # ─────────────────────────────────────────────────────────────
 # EMAIL + CLOUDINARY
 # ─────────────────────────────────────────────────────────────
-EMAIL_BACKEND = 'sendgrid_backend.SendgridBackend'
+EMAIL_BACKEND = config('EMAIL_BACKEND', default='sendgrid_backend.SendgridBackend')
 SENDGRID_API_KEY = config('SENDGRID_API_KEY')
 DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='dosyca35@gmail.com')
 SENDGRID_SANDBOX_MODE_IN_DEBUG = False
@@ -198,6 +247,27 @@ cloudinary.config(
 # ─────────────────────────────────────────────────────────────
 # SWAGGER / SPECTACULAR
 # ─────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────
+# EN-TÊTES DE SÉCURITÉ (OWASP A05)
+# ─────────────────────────────────────────────────────────────
+X_FRAME_OPTIONS = 'DENY'
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_REFERRER_POLICY = 'strict-origin-when-cross-origin'
+SECURE_CROSS_ORIGIN_OPENER_POLICY = 'same-origin'
+if not DEBUG:
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    # À activer (ex. 31536000) une fois le domaine servi uniquement en HTTPS
+    SECURE_HSTS_SECONDS = config('SECURE_HSTS_SECONDS', default=0, cast=int)
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = SECURE_HSTS_SECONDS > 0
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {'console': {'class': 'logging.StreamHandler'}},
+    'root': {'handlers': ['console'], 'level': 'INFO'},
+}
+
 SPECTACULAR_SETTINGS = {
     'TITLE': 'Easevent API',
     'DESCRIPTION': 'Easevent Backend API Documentation',
