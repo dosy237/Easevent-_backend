@@ -156,6 +156,10 @@ REST_FRAMEWORK = {
         'auth_register':  '10/hour',
         'auth_email':     '6/hour',
         'password_reset': '6/hour',
+        # Invitations (M12, M31)
+        'user_search':    '60/min',
+        'invite_send':    '30/hour',
+        'invite_token':   '30/min',
     },
 }
 
@@ -268,6 +272,24 @@ STRIPE_WEBHOOK_SECRET  = config('STRIPE_WEBHOOK_SECRET', default='')
 # Commission Easevent prélevée sur chaque ticket payant (en %, ex. 3)
 PLATFORM_FEE_PERCENT   = config('PLATFORM_FEE_PERCENT', default=3, cast=float)
 STRIPE_CONNECT_COUNTRY = config('STRIPE_CONNECT_COUNTRY', default='FR')
+
+# ─────────────────────────────────────────────────────────────
+# INVITATIONS (M12, M29–M31)
+# ─────────────────────────────────────────────────────────────
+# Invités par événement selon le plan (cahier des charges §2.5) — None = illimité
+PLAN_GUEST_LIMITS = {'free': 50, 'standard': 500, 'pro': None}
+INVITE_BATCH_MAX     = 100   # adresses / numéros par envoi
+INVITE_REMIND_DELAY_HOURS = 24  # une relance par invité et par jour au plus
+
+# SMS via Twilio (API REST). Sans ces variables, les invitations par SMS
+# sont créées mais marquées « canal non configuré ».
+# Clé de chiffrement des numéros (par défaut dérivée de SECRET_KEY)
+PHONE_ENCRYPTION_KEY = config('PHONE_ENCRYPTION_KEY', default='')
+
+TWILIO_ACCOUNT_SID          = config('TWILIO_ACCOUNT_SID', default='')
+TWILIO_AUTH_TOKEN           = config('TWILIO_AUTH_TOKEN', default='')
+TWILIO_FROM_NUMBER          = config('TWILIO_FROM_NUMBER', default='')
+TWILIO_MESSAGING_SERVICE_SID = config('TWILIO_MESSAGING_SERVICE_SID', default='')
 
 # ─────────────────────────────────────────────────────────────
 # EN-TÊTES DE SÉCURITÉ (OWASP A05)

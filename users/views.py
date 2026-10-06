@@ -240,7 +240,27 @@ def register_view(request):
             accepted_privacy_at = timezone.now(),
             marketing_opt_in    = data.get('marketing_opt_in', False),
         )
-        token = create_email_verification(user)
+        # Lien d'invitation (M31) : rattachement automatique. Si le lien a été
+        # reçu sur cette adresse, l'email est prouvé : connexion immédiate.
+        invitation_token = (data.get('invitation_token') or '').strip()
+        if invitation_token:
+            from invitations.public_views import claim_for_new_user
+            if claim_for_new_user(invitation_token, user):
+                user.is_verified = True
+                user.save(update_fields=['is_verified', 'updated_at'])
+        token = None if user.is_verified else create_email_verification(user)
+
+    if user.is_verified:
+        tokens = get_tokens_for_user(user)
+        return Response({
+            'message':               'Compte créé.',
+            'requires_verification': False,
+            'access':                tokens['access'],
+            'refresh':               tokens['refresh'],
+            'email':                 user.email,
+            'user':                  user_payload(user),
+            'invitation_claimed':    True,
+        }, status=status.HTTP_201_CREATED)
 
     try:
         send_verification_email(user, token, request)

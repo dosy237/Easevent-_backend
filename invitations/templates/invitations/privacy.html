@@ -1,0 +1,32 @@
+{% load static %}<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Confidentialité — Easevent</title>
+<style>
+  body{margin:0;background:#F7F7F7;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#1A1A1A}
+  main{max-width:640px;margin:0 auto;padding:32px 20px 48px}
+  header{display:flex;align-items:center;gap:10px;margin-bottom:20px;font-weight:900;font-size:20px}
+  h1{font-size:26px;margin:0 0 6px}
+  .muted{color:#555;font-size:14px;margin:0 0 24px}
+  section{background:#fff;border:1px solid #E8E8E8;border-radius:16px;padding:16px 18px;margin-bottom:12px}
+  h2{font-size:16px;margin:0 0 6px}
+  p{font-size:15px;line-height:23px;color:#333;margin:0}
+  a{color:#1B6B4A}
+</style>
+</head>
+<body>
+<main>
+  <header><img src="{% static 'app/logo.svg' %}" width="34" height="34" alt="">Easevent</header>
+  <h1>Politique de confidentialité</h1>
+  <p class="muted">Responsable du traitement : Eranis · Mise à jour : 6 octobre 2026</p>
+  <section><h2>1. Données collectées</h2><p>Compte : email, prénom, nom, photo, bio. Événements : titres, dates, lieux, photos. Invitations : email ou numéro de l'invité (chiffré), statut de réponse. Les mots de passe sont hachés et jamais stockés en clair.</p></section>
+  <section><h2>2. Pourquoi nous les utilisons</h2><p>Pour faire fonctionner le service : créer les événements, envoyer les invitations, générer les tickets et traiter les paiements. Les emails de nouveautés ne sont envoyés qu'avec votre consentement.</p></section>
+  <section><h2>3. Vous avez reçu une invitation sans avoir de compte ?</h2><p>L'organisateur a saisi votre email ou votre numéro pour vous inviter. Ils ne servent qu'à cette invitation. Le lien expire 7 jours après la fin de l'événement ; vous pouvez décliner sans créer de compte.</p></section>
+  <section><h2>4. Prestataires</h2><p>Stripe (paiements), SendGrid (emails), Twilio (SMS), Cloudinary (photos). Les transferts hors Union européenne sont encadrés par les clauses contractuelles types de la Commission européenne.</p></section>
+  <section><h2>5. Vos droits (RGPD)</h2><p>Accès, rectification, portabilité, opposition et effacement. Vous pouvez aussi saisir la CNIL (cnil.fr).</p></section>
+  <section><h2>6. Nous contacter</h2><p>Délégué à la protection des données : <a href="mailto:eranistechnology@gmail.com">eranistechnology@gmail.com</a>. Réponse sous un mois au plus.</p></section>
+</main>
+</body>
+</html>

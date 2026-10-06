@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<title>{{ organizer_first_name }} vous invite à {{ event_title }}</title>
+</head>
+<body style="margin:0;padding:0;background:#EEEEEE;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1A1A1A;">
+<div style="display:none;max-height:0;overflow:hidden;">{{ organizer_name }} vous invite à {{ event_title }} — {{ date }}</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#EEEEEE;">
+<tr><td align="center" style="padding:24px 12px;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background:#FFFFFF;border-radius:18px;overflow:hidden;">
+    <tr><td style="padding:16px 20px;font-size:20px;font-weight:800;letter-spacing:-0.3px;">
+      <span style="color:#1B6B4A;">Eas</span><span style="color:#E76F51;">event</span>
+    </td></tr>
+    {% if cover_url %}<tr><td><img src="{{ cover_url }}" width="480" alt="Visuel de l'événement {{ event_title }}" style="display:block;width:100%;max-width:480px;height:auto;border:0;"></td></tr>{% endif %}
+    <tr><td style="padding:20px;">
+      {% if reminder %}<p style="margin:0 0 8px;font-size:12px;font-weight:700;color:#B4492E;text-transform:uppercase;letter-spacing:0.5px;">Rappel</p>{% endif %}
+      <p style="margin:0 0 4px;font-size:14px;color:#555555;">Bonjour{% if greeting_name %} {{ greeting_name }}{% endif %},</p>
+      <h1 style="margin:0 0 14px;font-size:22px;line-height:28px;font-weight:900;letter-spacing:-0.3px;color:#1A1A1A;">{{ organizer_name }} vous invite à {{ event_title }}</h1>
+      {% if message %}<p style="margin:0 0 16px;padding:12px 14px;border-left:3px solid #1B6B4A;background:#F6FBF8;font-size:14px;line-height:20px;color:#1A1A1A;">« {{ message }} »</p>{% endif %}
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F7F7F7;border-radius:14px;font-size:13px;margin:0 0 18px;">
+        <tr><td style="padding:12px 14px 4px;color:#757575;">Date</td><td align="right" style="padding:12px 14px 4px;font-weight:600;">{{ date }}</td></tr>
+        {% if location %}<tr><td style="padding:4px 14px;color:#757575;">Lieu</td><td align="right" style="padding:4px 14px;font-weight:600;">{{ location }}</td></tr>{% endif %}
+        <tr><td style="padding:4px 14px;color:#757575;">Ticket</td><td align="right" style="padding:4px 14px;font-weight:600;">{{ price }}</td></tr>
+        {% if dress_code %}<tr><td style="padding:4px 14px;color:#757575;">Dress code</td><td align="right" style="padding:4px 14px;font-weight:600;">{{ dress_code }}</td></tr>{% endif %}
+        <tr><td colspan="2" style="height:8px;line-height:8px;font-size:0;">&nbsp;</td></tr>
+      </table>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="border-radius:14px;background:#1B6B4A;">
+        <a href="{{ url }}" style="display:block;padding:15px 0;color:#FFFFFF;font-size:15px;font-weight:800;text-decoration:none;">Voir l'invitation</a>
+      </td></tr></table>
+      <p style="margin:12px 0 0;font-size:12px;line-height:17px;color:#757575;text-align:center;">
+        {% if is_member %}Ouvrez l'invitation dans l'application Easevent pour répondre.{% else %}Vous créerez votre compte Easevent gratuit en 1 minute pour répondre.{% endif %} Ce lien est personnel.
+      </p>
+      <p style="margin:16px 0 0;font-size:12px;line-height:17px;color:#757575;word-break:break-all;">Si le bouton ne fonctionne pas : <a href="{{ url }}" style="color:#1B6B4A;">{{ url }}</a></p>
+    </td></tr>
+  </table>
+  <p style="max-width:480px;margin:14px auto 0;font-size:11px;line-height:16px;color:#757575;text-align:center;">
+    Vous recevez cet email car {{ organizer_name }} vous a invité via Easevent (Eranis). <a href="{{ privacy_url }}" style="color:#555555;">Confidentialité</a>
+  </p>
+</td></tr>
+</table>
+</body>
+</html>

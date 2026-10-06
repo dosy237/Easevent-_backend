@@ -43,3 +43,11 @@ def static_headers(headers, path, url):
     """
     if url.startswith(settings.STATIC_URL + 'app/'):
         headers['Access-Control-Allow-Origin'] = '*'
+
+
+def absolute_url(path, request=None):
+    """URL publique d'une page du backend (liens envoyés par email ou SMS)."""
+    base = getattr(settings, 'PUBLIC_BASE_URL', '') or ''
+    if base.startswith('https://') or request is None:
+        return f"{base.rstrip('/')}{path}"
+    return request.build_absolute_uri(path)

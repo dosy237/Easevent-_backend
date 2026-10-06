@@ -1,0 +1,90 @@
+{% load static %}<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="same-origin">
+<title>{% if error %}{{ error.0 }}{% else %}Invitation · {{ event.title }}{% endif %} — Easevent</title>
+<style>
+  *{box-sizing:border-box}
+  html,body{margin:0;min-height:100%}
+  body{min-height:100vh;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#fff;background:#0F2A1F;position:relative}
+  .bg{position:fixed;inset:0;background-size:cover;background-position:center}
+  .shade{position:fixed;inset:0;background:rgba(12,32,24,.66)}
+  .wrap{position:relative;min-height:100vh;max-width:440px;margin:0 auto;padding:40px 20px 28px;display:flex;flex-direction:column}
+  .brand{display:flex;align-items:center;gap:10px;font-size:20px;font-weight:900;letter-spacing:-.4px}
+  .brand img{width:34px;height:34px;border-radius:10px;background:#fff}
+  .spacer{flex:1;min-height:32px}
+  .card{border-radius:24px;padding:20px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.32);
+    -webkit-backdrop-filter:blur(22px);backdrop-filter:blur(22px);box-shadow:0 12px 30px rgba(0,0,0,.2)}
+  .who{display:flex;align-items:center;gap:10px;margin-bottom:12px;font-size:14px;color:rgba(255,255,255,.92)}
+  .avatar{width:40px;height:40px;border-radius:20px;background:#E76F51;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;flex-shrink:0}
+  h1{font-size:26px;line-height:31px;font-weight:900;letter-spacing:-.5px;margin:0 0 12px}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
+  .chip{font-size:12px;font-weight:600;background:rgba(255,255,255,.16);border-radius:8px;padding:5px 9px}
+  .chip.price{background:#fff;color:#1B6B4A;font-weight:800}
+  .quote{font-size:14px;line-height:20px;margin:0 0 16px;padding:10px 12px;border-left:3px solid #fff;background:rgba(255,255,255,.08);border-radius:0 10px 10px 0}
+  .steps{display:flex;justify-content:space-between;gap:6px;margin-bottom:18px;font-size:12px;font-weight:600;color:rgba(255,255,255,.9);list-style:none;padding:0}
+  .steps li{display:flex;align-items:center;gap:6px}
+  .steps b{width:20px;height:20px;border-radius:10px;background:rgba(255,255,255,.25);display:inline-flex;align-items:center;justify-content:center;font-size:11px}
+  .steps li:first-child b{background:#fff;color:#1B6B4A}
+  .btn{display:flex;align-items:center;justify-content:center;width:100%;min-height:52px;border-radius:16px;font-size:16px;font-weight:800;text-decoration:none;border:0;cursor:pointer;font-family:inherit}
+  .btn.primary{background:#fff;color:#1B6B4A}
+  .btn.ghost{margin-top:10px;background:transparent;color:#fff;border:1.5px solid rgba(255,255,255,.5);font-size:15px;font-weight:700}
+  .note{text-align:center;font-size:12px;line-height:17px;color:rgba(255,255,255,.82);margin:10px 0 0}
+  .decline{margin-top:14px;text-align:center}
+  .decline button{background:none;border:0;color:rgba(255,255,255,.88);font:600 14px/1 inherit;font-family:inherit;padding:14px;cursor:pointer;text-decoration:underline}
+  a:focus-visible,button:focus-visible{outline:3px solid #E76F51;outline-offset:2px}
+  .legal{margin-top:16px;text-align:center;font-size:11px;color:rgba(255,255,255,.7)}
+  .legal a{color:rgba(255,255,255,.85)}
+  @media (prefers-reduced-transparency: reduce){.card{background:rgba(15,42,31,.92);backdrop-filter:none}}
+</style>
+</head>
+<body>
+{% if cover_url %}<div class="bg" style="background-image:url('{{ cover_url }}')" aria-hidden="true"></div>{% endif %}
+<div class="shade" aria-hidden="true"></div>
+<main class="wrap">
+  <div class="brand"><img src="{% static 'app/logo.svg' %}" alt="">Easevent</div>
+  <div class="spacer"></div>
+
+  {% if error %}
+    <section class="card" aria-labelledby="t">
+      <h1 id="t">{{ error.0 }}</h1>
+      <p class="note" style="text-align:left;font-size:15px;line-height:22px;margin:0 0 16px">{{ error.1 }}</p>
+      <a class="btn primary" href="easevent://tickets">Ouvrir Easevent</a>
+    </section>
+  {% elif declined %}
+    <section class="card" aria-labelledby="t" role="status">
+      <h1 id="t">Invitation déclinée</h1>
+      <p class="note" style="text-align:left;font-size:15px;line-height:22px;margin:0">{{ organizer.first_name }} sera informé·e que vous ne pourrez pas venir à « {{ event.title }} ». Merci d'avoir répondu.</p>
+    </section>
+  {% else %}
+    <section class="card" aria-labelledby="t">
+      <div class="who"><span class="avatar" aria-hidden="true">{{ organizer_initials }}</span><span><strong style="color:#fff">{{ organizer.full_name }}</strong> vous invite</span></div>
+      <h1 id="t">{{ event.title }}</h1>
+      <div class="chips">
+        <span class="chip">{{ date }}</span>
+        {% if location %}<span class="chip">{{ location }}</span>{% endif %}
+        <span class="chip price">{{ price }}</span>
+        {% if event.dress_code %}<span class="chip">Dress code : {{ event.dress_code }}</span>{% endif %}
+      </div>
+      {% if inv.message %}<p class="quote">« {{ inv.message }} »</p>{% endif %}
+      <ol class="steps" aria-label="Étapes">
+        <li><b>1</b>{% if inv.invited_user_id %}Se connecter{% else %}Créer un compte{% endif %}</li>
+        <li><b>2</b>Accepter</li>
+        <li><b>3</b>Mon ticket</li>
+      </ol>
+      <a class="btn primary" id="open" href="{{ deeplink }}">Ouvrir dans l'application</a>
+      <p class="note">L'application Easevent vous guide : création de compte{% if inv.email %} avec {{ inv.email }}{% endif %}, réponse et ticket.</p>
+    </section>
+    <form class="decline" method="post">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="decline">
+      <button type="submit">Décliner l'invitation</button>
+    </form>
+  {% endif %}
+  <p class="legal">Lien personnel et non transférable. <a href="{% url 'privacy-page' %}">Confidentialité</a></p>
+</main>
+</body>
+</html>

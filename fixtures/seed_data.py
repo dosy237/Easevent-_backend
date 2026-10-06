@@ -107,10 +107,11 @@ with transaction.atomic():
     print("\n[4/5] Création des invitations et RSVP...")
 
     # Invitation avec expires_at (obligatoire)
+    from invitations.services import new_token
     inv_marie = Invitation.objects.create(
         event=mariage,
         invited_user=marie,
-        token=secrets.token_urlsafe(32),
+        token=new_token()[1],               # stocké haché (invitations/services.py)
         status="confirmed",
         channel="platform_notification",
         expires_at=dt(30),                    # ← Correction ici
