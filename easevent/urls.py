@@ -18,6 +18,7 @@ urlpatterns = [
     path('api/events/', include('events.urls')),
     path('api/auth/',   include('users.urls')),
     path('api/invitations/', include('invitations.urls')),
+    path('api/', include('tickets.urls')),
 
     # Swagger / OpenAPI documentation
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),

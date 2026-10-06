@@ -1,0 +1,223 @@
+"""
+tickets/views.py
+═══════════════════════════════════════════════════════════════
+GET  /api/tickets/mine/?status=pending|generated|archived
+POST /api/events/<id>/tickets/            → ticket « en attente » (Participer / Payer)
+GET  /api/tickets/<id>/                   → détail (+ QR si généré)
+POST /api/tickets/<id>/validate/          → gratuit : généré
+POST /api/tickets/<id>/checkout/          → payant : URL Stripe Checkout
+POST /api/tickets/<id>/cancel/
+GET  /api/tickets/counts/                 → compteurs (badge de l'onglet)
+GET  /api/payments/connect/status/        → organisateur : état des paiements
+POST /api/payments/connect/onboard/       → lien d'activation Stripe
+POST /api/payments/connect/dashboard/     → lien tableau de bord Stripe
+POST /api/stripe/webhook/                 → Stripe (signature vérifiée)
+GET  /api/payments/return/                → page de retour vers l'application
+═══════════════════════════════════════════════════════════════
+"""
+import logging
+
+from django.db.models import Count, Q
+from django.http import HttpResponse
+from django.shortcuts import get_object_or_404, render
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_POST
+from rest_framework import status
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+
+from events.models import Event
+from .models import Ticket
+from .serializers import TicketSerializer
+from . import services, stripe_service
+from .services import TicketError
+
+logger = logging.getLogger(__name__)
+
+
+def _error(exc):
+    return Response({'detail': exc.message, 'code': exc.code}, status=exc.status)
+
+
+def _own_ticket(request, ticket_id):
+    # Un utilisateur ne voit que SES tickets (OWASP API1 — BOLA)
+    return get_object_or_404(Ticket.objects.select_related('event', 'event__organizer', 'user'),
+                             pk=ticket_id, user=request.user)
+
+
+def _out(request, ticket, code=status.HTTP_200_OK):
+    return Response(TicketSerializer(ticket, context={'request': request}).data, status=code)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def my_tickets(request):
+    qs = Ticket.objects.filter(user=request.user)
+    services.expire_old_tickets(qs)
+    wanted = request.query_params.get('status')
+    if wanted == 'pending':
+        qs = qs.filter(status=Ticket.Status.PENDING)
+    elif wanted == 'generated':
+        qs = qs.filter(status=Ticket.Status.GENERATED)
+    elif wanted == 'archived':
+        qs = qs.filter(status__in=[Ticket.Status.CANCELLED, Ticket.Status.EXPIRED])
+    qs = qs.select_related('event', 'event__organizer', 'user').order_by('-created_at')[:100]
+    return Response({'tickets': TicketSerializer(qs, many=True, context={'request': request}).data})
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def ticket_counts(request):
+    from invitations.models import Invitation
+    from django.utils import timezone
+    counts = Ticket.objects.filter(user=request.user).aggregate(
+        pending=Count('id', filter=Q(status='pending')),
+        generated=Count('id', filter=Q(status='generated')),
+        archived=Count('id', filter=Q(status__in=['cancelled', 'expired'])),
+    )
+    counts['invitations_to_answer'] = Invitation.objects.filter(
+        invited_user=request.user, status__in=['sent', 'opened'], expires_at__gt=timezone.now(),
+    ).count()
+    counts['badge'] = counts['pending'] + counts['invitations_to_answer']
+    return Response(counts)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def take_ticket(request, event_id):
+    event = get_object_or_404(Event, pk=event_id, deleted_at__isnull=True)
+    try:
+        ticket, created = services.create_pending_ticket(event, request.user)
+        # Gratuit : validation directe (M24 « Participer — ticket gratuit »)
+        if ticket.is_free and ticket.status == Ticket.Status.PENDING:
+            ticket = services.validate_free_ticket(ticket)
+    except TicketError as exc:
+        return _error(exc)
+    return _out(request, ticket, status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def ticket_detail(request, ticket_id):
+    return _out(request, _own_ticket(request, ticket_id))
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def validate_ticket(request, ticket_id):
+    try:
+        ticket = services.validate_free_ticket(_own_ticket(request, ticket_id))
+    except TicketError as exc:
+        return _error(exc)
+    return _out(request, ticket)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def checkout_ticket(request, ticket_id):
+    try:
+        url = stripe_service.create_checkout(_own_ticket(request, ticket_id), request)
+    except TicketError as exc:
+        return _error(exc)
+    except Exception:
+        logger.exception('Création de session Stripe impossible')
+        return Response({'detail': 'Le paiement est momentanément indisponible. Réessayez.',
+                         'code': 'stripe_error'}, status=status.HTTP_502_BAD_GATEWAY)
+    return Response({'checkout_url': url})
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def cancel_ticket(request, ticket_id):
+    try:
+        ticket = services.cancel_ticket(_own_ticket(request, ticket_id))
+    except TicketError as exc:
+        return _error(exc)
+    return _out(request, ticket)
+
+
+# ─────────────────────────────────────────────────────────────
+# Organisateur : Stripe Connect
+# ─────────────────────────────────────────────────────────────
+def _connect_payload(user):
+    return {
+        'connected':        bool(user.stripe_account_id),
+        'charges_enabled':  user.stripe_charges_enabled,
+        'payouts_enabled':  user.stripe_payouts_enabled,
+        'payments_available': bool(stripe_service.settings.STRIPE_SECRET_KEY),
+    }
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def connect_status(request):
+    user = request.user
+    if user.stripe_account_id and not user.stripe_charges_enabled:
+        try:
+            stripe_service.sync_account(user)
+        except Exception:
+            logger.exception('Lecture du compte Stripe impossible')
+    return Response(_connect_payload(user))
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def connect_onboard(request):
+    try:
+        url = stripe_service.onboarding_link(request.user, request)
+    except TicketError as exc:
+        return _error(exc)
+    except Exception:
+        logger.exception('Lien Stripe Connect impossible')
+        return Response({'detail': "L'activation des paiements est momentanément indisponible.",
+                         'code': 'stripe_error'}, status=status.HTTP_502_BAD_GATEWAY)
+    return Response({'url': url})
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def connect_dashboard(request):
+    try:
+        url = stripe_service.dashboard_link(request.user)
+    except TicketError as exc:
+        return _error(exc)
+    except Exception:
+        logger.exception('Lien tableau de bord Stripe impossible')
+        return Response({'detail': 'Tableau de bord momentanément indisponible.', 'code': 'stripe_error'},
+                        status=status.HTTP_502_BAD_GATEWAY)
+    return Response({'url': url})
+
+
+# ─────────────────────────────────────────────────────────────
+# Stripe → Easevent
+# ─────────────────────────────────────────────────────────────
+@csrf_exempt
+@require_POST
+def stripe_webhook(request):
+    try:
+        event = stripe_service.parse_webhook(request.body, request.META.get('HTTP_STRIPE_SIGNATURE', ''))
+    except stripe_service.PaymentsUnavailable:
+        return HttpResponse(status=503)
+    except Exception:
+        # Signature invalide ou charge illisible : requête rejetée
+        return HttpResponse(status=400)
+    try:
+        stripe_service.handle_event(event)
+    except TicketError as exc:
+        logger.warning('Webhook Stripe : %s', exc.message)
+    return HttpResponse(status=200)
+
+
+def payment_return(request):
+    """Page affichée après Stripe (paiement ou activation) : renvoie vers l'application."""
+    flow = request.GET.get('flow', 'ticket')
+    state = request.GET.get('status', '')
+    pages = {
+        ('ticket', 'success'):  ('Paiement envoyé', 'Votre ticket apparaît dans « Mes tickets » dès que le paiement est confirmé.', 'easevent://tickets'),
+        ('ticket', 'cancel'):   ('Paiement interrompu', 'Votre ticket reste dans « Mes tickets › En attente ». Vous pourrez payer plus tard.', 'easevent://tickets'),
+        ('connect', 'done'):    ('Informations enregistrées', 'Retournez dans Easevent pour voir l’état de vos paiements.', 'easevent://profil/paiements'),
+        ('connect', 'refresh'): ('Lien expiré', 'Relancez l’activation des paiements depuis votre profil Easevent.', 'easevent://profil/paiements'),
+    }
+    title, message, deeplink = pages.get((flow, state), ('Easevent', 'Retournez dans l’application.', 'easevent://'))
+    return render(request, 'tickets/return.html', {'title': title, 'message': message, 'deeplink': deeplink})

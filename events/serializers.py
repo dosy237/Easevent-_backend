@@ -37,6 +37,9 @@ class EventPublicSerializer(serializers.ModelSerializer):
     # Vaut None si la géolocalisation est désactivée.
     distance_km     = serializers.SerializerMethodField()
     event_type_display = serializers.SerializerMethodField()
+    spots_left         = serializers.SerializerMethodField()
+    my_ticket          = serializers.SerializerMethodField()
+    organizer          = serializers.SerializerMethodField()
 
     class Meta:
         # model : quel modèle Django ce serializer traduit
@@ -77,6 +80,9 @@ class EventPublicSerializer(serializers.ModelSerializer):
             'status',
             'is_online',
             'online_link',
+            'spots_left',          # places restantes (null = illimité)
+            'my_ticket',           # ticket actif de l'utilisateur connecté (détail)
+            'organizer',           # nom de l'organisateur
         ]
 
     def get_date_formatted(self, obj):
@@ -144,6 +150,26 @@ class EventPublicSerializer(serializers.ModelSerializer):
         if obj.event_type == 'autre' and obj.event_type_label:
             return obj.event_type_label
         return obj.get_event_type_display()
+
+    def get_spots_left(self, obj):
+        if not obj.max_guests:
+            return None
+        from tickets.services import spots_left
+        return spots_left(obj)
+
+    def get_my_ticket(self, obj):
+        """Uniquement dans les vues détail (context['with_my_ticket']) : évite N requêtes sur les listes."""
+        request = self.context.get('request')
+        if not self.context.get('with_my_ticket') or not request or not request.user.is_authenticated:
+            return None
+        from tickets.services import active_ticket
+        ticket = active_ticket(obj, request.user)
+        if not ticket:
+            return None
+        return {'id': str(ticket.id), 'status': ticket.status, 'payment_status': ticket.payment_status}
+
+    def get_organizer(self, obj):
+        return {'id': str(obj.organizer_id), 'name': obj.organizer.full_name}
 
     def get_distance_km(self, obj):
         """

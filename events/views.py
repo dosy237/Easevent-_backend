@@ -87,7 +87,7 @@ def liste_evenements_publics(request):
     Retourne la liste des événements publiés et non supprimés.
     Filtres possibles : type, date, recherche par titre.
     """
-    evenements = Event.objects.filter(
+    evenements = Event.objects.select_related('organizer').filter(
         status             = 'published',
         visibility         = 'public',
         deleted_at__isnull = True
@@ -161,7 +161,7 @@ def detail_evenement_public(request, event_id):
                     status=status.HTTP_403_FORBIDDEN
                 )
 
-    serializer = EventPublicSerializer(event, context={'request': request})
+    serializer = EventPublicSerializer(event, context={'request': request, 'with_my_ticket': True})
     return Response(serializer.data)
 
 
@@ -176,7 +176,7 @@ def mes_evenements(request):
     Retourne tous les événements créés par l'utilisateur connecté.
     Inclut les brouillons, publiés et archivés.
     """
-    evenements = Event.objects.filter(
+    evenements = Event.objects.select_related('organizer').filter(
         organizer          = request.user,
         deleted_at__isnull = True,
     ).order_by('-created_at')

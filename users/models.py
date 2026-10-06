@@ -146,6 +146,14 @@ class User(AbstractBaseUser, PermissionsMixin):
         verbose_name = "ID client Stripe"
     )
 
+    # ── Stripe Connect (organisateur) ─────────────────────────
+    # Compte Express de l'organisateur : l'argent de ses tickets y est
+    # versé directement, puis viré sur son IBAN par Stripe.
+    stripe_account_id      = models.CharField(max_length=64, blank=True, null=True, unique=True,
+                                              verbose_name="Compte Stripe Connect")
+    stripe_charges_enabled = models.BooleanField(default=False, verbose_name="Peut encaisser")
+    stripe_payouts_enabled = models.BooleanField(default=False, verbose_name="Virements activés")
+
     # ── Connexion sociale (Google / Apple) ────────────────────
     oauth_provider = models.CharField(
         max_length   = 10,

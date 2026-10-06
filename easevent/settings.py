@@ -78,6 +78,7 @@ INSTALLED_APPS = [
     'invitations',
     'analytics',
     'subscriptions',
+    'tickets',
 ]
 
 # ─────────────────────────────────────────────────────────────
@@ -259,6 +260,15 @@ cloudinary.config(
 # ─────────────────────────────────────────────────────────────
 # SWAGGER / SPECTACULAR
 # ─────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────
+# STRIPE (paiements) — clés UNIQUEMENT dans le .env du serveur
+# ─────────────────────────────────────────────────────────────
+STRIPE_SECRET_KEY      = config('STRIPE_SECRET_KEY', default='')
+STRIPE_WEBHOOK_SECRET  = config('STRIPE_WEBHOOK_SECRET', default='')
+# Commission Easevent prélevée sur chaque ticket payant (en %, ex. 3)
+PLATFORM_FEE_PERCENT   = config('PLATFORM_FEE_PERCENT', default=0, cast=float)
+STRIPE_CONNECT_COUNTRY = config('STRIPE_CONNECT_COUNTRY', default='FR')
+
 # ─────────────────────────────────────────────────────────────
 # EN-TÊTES DE SÉCURITÉ (OWASP A05)
 # ─────────────────────────────────────────────────────────────
