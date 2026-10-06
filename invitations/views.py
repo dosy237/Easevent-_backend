@@ -85,6 +85,10 @@ def repondre_invitation(request, invitation_id):
     invitation.responded_at = timezone.now()
     invitation.save()
 
+    # Fil de la conversation avec l'organisateur (M15 / M16)
+    from messaging.services import record_invitation_event
+    record_invitation_event(invitation, 'invitation_accepted' if new_status == 'confirmed' else 'invitation_declined')
+
     if ticket is not None and ticket.status == Ticket.Status.PENDING:
         from notifications.models import Notification
         from notifications.services import notify

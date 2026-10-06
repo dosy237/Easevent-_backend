@@ -80,6 +80,7 @@ INSTALLED_APPS = [
     'subscriptions',
     'tickets',
     'notifications',
+    'messaging',
 ]
 
 # ─────────────────────────────────────────────────────────────
@@ -161,6 +162,7 @@ REST_FRAMEWORK = {
         'user_search':    '60/min',
         'invite_send':    '30/hour',
         'invite_token':   '30/min',
+        'messages':       '30/min',
     },
 }
 

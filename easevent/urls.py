@@ -22,6 +22,7 @@ urlpatterns = [
     path('api/invitations/', include('invitations.urls')),
     path('api/', include('tickets.urls')),
     path('api/notifications/', include('notifications.urls')),
+    path('api/conversations/', include('messaging.urls')),
 
     # Annuaire des membres (M12 mode Membres, M29)
     path('api/users/search/', guests.search_users,  name='users-search'),

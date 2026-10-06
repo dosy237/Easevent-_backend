@@ -614,6 +614,11 @@ def export_data_view(request):
                 'responded_at': inv.responded_at.isoformat() if inv.responded_at else None,
             } for inv in invitations
         ],
+        'messages_sent': [
+            {'event': m.conversation.event.title, 'text': m.body, 'created_at': m.created_at.isoformat()}
+            for m in __import__('messaging.models', fromlist=['Message']).Message.objects
+            .filter(sender=user, kind='text').select_related('conversation__event').order_by('-created_at')[:500]
+        ],
         'notification_preferences': user.notification_prefs or {},
         'notifications': [
             {'type': n.type, 'text': f'{n.title} {n.body}'.strip(), 'created_at': n.created_at.isoformat(),

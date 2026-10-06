@@ -128,6 +128,11 @@ def generate_ticket(ticket, payment_status):
             f"pour {event.title}{' · paiement reçu' if paid else ''}. Présentez le QR code à l'entrée.",
             event=event, ticket=ticket, dedupe_key=f'ticket-generated:{ticket.id}',
         )
+        if ticket.invitation_id:
+            from django.db import transaction as _tx
+            from messaging.services import record_invitation_event
+            invitation = ticket.invitation
+            _tx.on_commit(lambda: record_invitation_event(invitation, 'ticket_generated'))
     return ticket
 
 

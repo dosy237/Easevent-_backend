@@ -82,3 +82,10 @@ depuis plus de 10 minutes, et les rappels / bilans sont calculés à l'ouverture
 
 - [ ] Projet Firebase + `google-services.json` (Android) et compte Expo (EAS) pour les jetons push.
       Les tâches Celery existantes enverront alors aussi les push.
+
+## 9. Messagerie en temps réel (plus tard, facultatif)
+
+La messagerie (M15 / M16) se met à jour toutes les 4 s quand une conversation est
+ouverte (seuls les nouveaux messages sont téléchargés). Pour du temps réel strict,
+Django Channels + Redis (déjà dans requirements.txt) pourront remplacer ce mécanisme
+sans changer l'API.
