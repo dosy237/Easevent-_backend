@@ -36,6 +36,7 @@ class EventPublicSerializer(serializers.ModelSerializer):
     # Calculée dans la view quand l'utilisateur partage sa position GPS.
     # Vaut None si la géolocalisation est désactivée.
     distance_km     = serializers.SerializerMethodField()
+    event_type_display = serializers.SerializerMethodField()
 
     class Meta:
         # model : quel modèle Django ce serializer traduit
@@ -49,6 +50,8 @@ class EventPublicSerializer(serializers.ModelSerializer):
             'id',
             'title',
             'event_type',
+            'event_type_label',    # type libre quand event_type = « autre »
+            'event_type_display',  # calculé — libellé à afficher
             'description',
             'date_formatted',   # calculé — ex: "13 JUIN"
             'start_date',
@@ -59,6 +62,7 @@ class EventPublicSerializer(serializers.ModelSerializer):
             'confirmed_count',  # calculé — nombre d'invités confirmés
             'view_count',
             'ambiance',
+            'palette',             # couleurs choisies librement {primary, secondary}
             'subdomain',
             'cover_image',      # calculé — URL de l'image de couverture
             'distance_km',      # calculé — distance en km (ou null)
@@ -133,6 +137,12 @@ class EventPublicSerializer(serializers.ModelSerializer):
             url = obj.template_config.get('cover_image')
 
         return public_url(url, self.context.get('request'))
+
+    def get_event_type_display(self, obj):
+        """« Baptême » pour un type libre, sinon le libellé du type (« Conférence »)."""
+        if obj.event_type == 'autre' and obj.event_type_label:
+            return obj.event_type_label
+        return obj.get_event_type_display()
 
     def get_distance_km(self, obj):
         """

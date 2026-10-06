@@ -306,3 +306,29 @@ class TicketingFieldsTest(TestCase):
         self.assertEqual(r.data['event']['dress_code'], 'Tenue de soirée')
         r = self.client.patch(f'/api/events/{event_id}/update/', {'is_paid': False}, format='json')
         self.assertEqual(r.data['event']['price'], '0.00')
+
+
+class StyleFieldsTest(TicketingFieldsTest):
+    """Type libre (« Autre ») et palette de couleurs libre."""
+
+    def test_type_personnalise(self):
+        r = self._create(event_type='autre', event_type_label='Baptême')
+        self.assertEqual(r.status_code, 201, r.data)
+        self.assertEqual(r.data['event']['event_type_label'], 'Baptême')
+        self.assertEqual(r.data['event']['event_type_display'], 'Baptême')
+
+    def test_autre_sans_nom_refuse(self):
+        self.assertEqual(self._create(event_type='autre').status_code, 400)
+
+    def test_type_predefini_ignore_le_libelle(self):
+        r = self._create(event_type='gala', event_type_label='Truc')
+        self.assertEqual(r.data['event']['event_type_label'], '')
+        self.assertEqual(r.data['event']['event_type_display'], 'Gala')
+
+    def test_palette_libre(self):
+        r = self._create(palette={'primary': '#ff00aa', 'secondary': '#123456'})
+        self.assertEqual(r.data['event']['palette'], {'primary': '#FF00AA', 'secondary': '#123456'})
+
+    def test_palette_invalide(self):
+        self.assertEqual(self._create(palette={'primary': 'red'}).status_code, 400)
+        self.assertEqual(self._create(palette={'primary': 'url(javascript:x)'}).status_code, 400)

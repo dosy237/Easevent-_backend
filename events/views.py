@@ -63,7 +63,7 @@ import cloudinary.uploader
 # ─────────────────────────────────────────────────────────────────
 from .models      import Event
 from .serializers import EventPublicSerializer
-from .ticketing   import clean_ticketing
+from .ticketing   import clean_ticketing, clean_style
 
 import logging
 logger = logging.getLogger(__name__)
@@ -305,8 +305,11 @@ def creer_evenement(request):
     if visibility not in VISIBILITIES:
         return Response({'detail': 'Visibilité invalide (public ou private).'}, status=status.HTTP_400_BAD_REQUEST)
 
-    # ── Billetterie & dress code (M23) ───────────────────────────
+    # ── Billetterie & dress code (M23) + type libre et palette ────
     ticketing, ticket_errors = clean_ticketing(data)
+    style, style_errors = clean_style(data, data.get('event_type'))
+    ticket_errors.update(style_errors)
+    ticketing.update(style)
     if ticket_errors:
         first = next(iter(ticket_errors.values()))
         return Response({'detail': first, **ticket_errors}, status=status.HTTP_400_BAD_REQUEST)
@@ -336,7 +339,6 @@ def creer_evenement(request):
             online_link      = data.get('online_link'),
             cover_image      = data.get('cover_image'),
             ambiance         = data.get('ambiance', ''),
-            palette          = data.get('palette'),
             visibility       = visibility,
             status           = 'draft',  # Toujours brouillon à la création
             subdomain        = subdomain,
@@ -431,7 +433,6 @@ def modifier_evenement(request, event_id):
     if 'online_link'      in data: event.online_link      = data['online_link']
     if 'cover_image'      in data: event.cover_image      = data['cover_image']
     if 'ambiance'         in data: event.ambiance         = data['ambiance']
-    if 'palette'          in data: event.palette          = data['palette']
     if 'visibility'       in data:
         if data['visibility'] not in VISIBILITIES:
             return Response({'detail': 'Visibilité invalide (public ou private).'}, status=status.HTTP_400_BAD_REQUEST)
@@ -446,8 +447,13 @@ def modifier_evenement(request, event_id):
         parsed = parse_datetime(data['end_date'])
         if parsed: event.end_date = parsed
 
-    # Billetterie & dress code
+    # Billetterie & dress code, type libre et palette
+    if 'event_type' in data and data['event_type'] not in Event.EventType.values:
+        return Response({'detail': "Type d'événement invalide."}, status=status.HTTP_400_BAD_REQUEST)
     ticketing, ticket_errors = clean_ticketing(data, current=event)
+    style, style_errors = clean_style(data, data.get('event_type', event.event_type))
+    ticket_errors.update(style_errors)
+    ticketing.update(style)
     if ticket_errors:
         first = next(iter(ticket_errors.values()))
         return Response({'detail': first, **ticket_errors}, status=status.HTTP_400_BAD_REQUEST)

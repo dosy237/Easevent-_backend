@@ -95,6 +95,9 @@ class Event(models.Model):
     # ── Informations de base ──────────────────────────────────
     title       = models.CharField(max_length=100, verbose_name="Titre")
     event_type  = models.CharField(max_length=15, choices=EventType.choices, verbose_name="Type")
+    # Type libre saisi par l'organisateur quand il choisit « Autre »
+    # (ex. « Baptême », « Remise de diplômes »)
+    event_type_label = models.CharField(max_length=40, blank=True, default='', verbose_name="Type personnalisé")
     description = models.TextField(blank=True, default='', verbose_name="Description")
 
     # ── Dates ─────────────────────────────────────────────────

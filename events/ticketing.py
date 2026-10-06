@@ -88,3 +88,48 @@ def clean_ticketing(data, current=None):
         out['dress_code'] = dress or None
 
     return out, errors
+
+
+# ─────────────────────────────────────────────────────────────
+# Type personnalisé et palette libre (étapes 1 et 4)
+# ─────────────────────────────────────────────────────────────
+import re
+
+HEX_COLOR = re.compile(r'^#[0-9A-Fa-f]{6}$')
+
+
+def clean_style(data, event_type):
+    """
+    Valide le type personnalisé (« Autre ») et la palette de couleurs.
+    La palette est libre : toute couleur hexadécimale #RRGGBB est acceptée.
+    Retourne (valeurs_nettoyées, erreurs).
+    """
+    errors, out = {}, {}
+
+    if 'event_type_label' in data or event_type == 'autre':
+        label = str(data.get('event_type_label') or '').strip()
+        if event_type == 'autre' and not label:
+            errors['event_type_label'] = "Indiquez le type de votre événement."
+        elif len(label) > 40:
+            errors['event_type_label'] = 'Le type fait 40 caractères maximum.'
+        elif any(ch in label for ch in '<>{}'):
+            errors['event_type_label'] = 'Le type contient des caractères non autorisés.'
+        # Un type prédéfini n'a pas de libellé personnalisé
+        out['event_type_label'] = label if event_type == 'autre' else ''
+
+    if 'palette' in data and data.get('palette') is not None:
+        palette = data.get('palette')
+        if not isinstance(palette, dict):
+            errors['palette'] = 'Palette invalide.'
+        else:
+            clean = {}
+            for key in ('primary', 'secondary'):
+                value = palette.get(key)
+                if value in (None, ''):
+                    continue
+                if not isinstance(value, str) or not HEX_COLOR.match(value):
+                    errors['palette'] = 'Les couleurs doivent être au format #RRGGBB.'
+                    break
+                clean[key] = value.upper()
+            out['palette'] = clean or None
+    return out, errors
