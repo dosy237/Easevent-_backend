@@ -419,3 +419,63 @@ class AccountFlowTest(TestCase):
         self.assertNotIn('password', str(export.data))
         stats = self.client.get('/api/auth/me/stats/')
         self.assertEqual(stats.data['events_count'], 0)
+
+
+# ─────────────────────────────────────────────────────────────
+# CLASSE 4 — Application mobile (APK) : liens email et images
+# ─────────────────────────────────────────────────────────────
+@override_settings(FRONTEND_URL='', PUBLIC_BASE_URL='https://easevent.example.com')
+class MobileAppLinksTest(TestCase):
+
+    def setUp(self):
+        cache.clear()
+        self.client = APIClient()
+
+    def test_lien_reinitialisation_ouvre_la_page_du_backend(self):
+        import re
+        User.objects.create_user(email='a@easevent.fr', password='Ancien-Mot-2026', first_name='A', last_name='B')
+        self.client.post('/api/auth/password-reset/', {'email': 'a@easevent.fr'}, format='json')
+        path = re.search(r'https?://[^/\s]+(/api/auth/password-reset/[^/\s]+/[^/\s]+/)', mail.outbox[0].body).group(1)
+
+        page = self.client.get(path)
+        self.assertEqual(page.status_code, 200)
+        self.assertContains(page, 'Nouveau mot de passe')
+
+        from django.test import Client
+        browser = Client(enforce_csrf_checks=False)
+        done = browser.post(path, {'new_password': 'Nouveau-Mot-2026', 'confirm_password': 'Nouveau-Mot-2026'})
+        self.assertContains(done, 'Mot de passe modifié')
+        self.assertTrue(User.objects.get(email='a@easevent.fr').check_password('Nouveau-Mot-2026'))
+
+        # Le lien ne sert qu'une fois
+        self.assertContains(browser.get(path), 'Lien non valide')
+
+    def test_page_reinitialisation_lien_invalide(self):
+        response = self.client.get('/api/auth/password-reset/xxx/yyy/')
+        self.assertContains(response, 'Lien non valide')
+
+    def test_image_de_couverture_en_url_absolue_https(self):
+        from datetime import timedelta
+        from events.models import Event
+        organizer = User.objects.create_user(email='o@easevent.fr', password='x', first_name='O', last_name='R')
+        Event.objects.create(
+            organizer=organizer, title='Gala', event_type='gala',
+            start_date=timezone.now() + timedelta(days=3), end_date=timezone.now() + timedelta(days=4),
+            status='published', visibility='public', cover_image='events/seed_0_gallery01.png',
+        )
+        events = self.client.get('/api/events/publics/').data['events']
+        self.assertEqual(events[0]['cover_image'], 'https://easevent.example.com/media/events/seed_0_gallery01.png')
+
+    def test_media_servi_par_django(self):
+        import os, tempfile
+        from django.conf import settings
+        os.makedirs(os.path.join(settings.MEDIA_ROOT, 'events'), exist_ok=True)
+        with tempfile.NamedTemporaryFile(dir=os.path.join(settings.MEDIA_ROOT, 'events'), suffix='.png', delete=False) as f:
+            f.write(b'\x89PNG test')
+        try:
+            name = os.path.basename(f.name)
+            response = self.client.get(f'/media/events/{name}')
+            self.assertEqual(response.status_code, 200)
+            self.assertIn(self.client.get('/media/../manage.py').status_code, (400, 404))
+        finally:
+            os.remove(f.name)

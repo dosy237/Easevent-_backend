@@ -28,7 +28,7 @@ def mes_invitations(request):
         status__in = ['revoked', 'expired']
     ).select_related('event').order_by('-sent_at')
 
-    serializer = InvitationSerializer(invitations, many=True)
+    serializer = InvitationSerializer(invitations, many=True, context={'request': request})
     return Response({
         'count':       invitations.count(),
         'invitations': serializer.data,

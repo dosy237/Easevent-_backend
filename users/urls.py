@@ -12,6 +12,7 @@ urlpatterns = [
     path('resend-verification/',     views.resend_verification_view,     name='resend-verification'),
     path('password-reset/',          views.password_reset_request_view,  name='password-reset'),
     path('password-reset/confirm/',  views.password_reset_confirm_view,  name='password-reset-confirm'),
+    path('password-reset/<str:uid>/<str:token>/', views.password_reset_page_view, name='password-reset-page'),
     path('me/',                      views.me_view,                      name='me'),
     path('me/update/',               views.update_profile_view,          name='update-profile'),
     path('me/stats/',                views.me_stats_view,                name='me-stats'),

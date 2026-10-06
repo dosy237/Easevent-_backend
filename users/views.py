@@ -168,6 +168,15 @@ def send_password_reset_email(user, request=None):
     )
 
 
+def _apply_new_password(user, raw_password):
+    """Enregistre le mot de passe et ferme toutes les sessions."""
+    user.set_password(raw_password)
+    # Recevoir le lien par email prouve la possession de l'adresse
+    user.is_verified = True
+    user.save()
+    _blacklist_all_tokens(user)
+
+
 def _blacklist_all_tokens(user):
     """Invalide toutes les sessions (refresh tokens) d'un utilisateur."""
     from rest_framework_simplejwt.token_blacklist.models import OutstandingToken, BlacklistedToken
@@ -400,12 +409,48 @@ def password_reset_confirm_view(request):
     except DjangoValidationError as exc:
         return Response({'new_password': exc.messages[0]}, status=status.HTTP_400_BAD_REQUEST)
 
-    user.set_password(data['new_password'])
-    # Recevoir le lien par email prouve la possession de l'adresse
-    user.is_verified = True
-    user.save()
-    _blacklist_all_tokens(user)
+    _apply_new_password(user, data['new_password'])
     return Response({'detail': 'Mot de passe modifié. Vous pouvez vous connecter.'})
+
+
+def password_reset_page_view(request, uid, token):
+    """
+    GET/POST /api/auth/password-reset/<uid>/<token>/
+    Page web ouverte depuis le lien de l'email (l'application est un APK :
+    il n'y a pas de site web pour accueillir le lien). Formulaire protégé
+    par CSRF ; mêmes règles que l'endpoint /confirm/.
+    """
+    from django.templatetags.static import static
+    from django.views.decorators.csrf import csrf_protect
+
+    @csrf_protect
+    def handle(request):
+        context = {'logo_url': static('app/logo.svg'), 'status': 'form'}
+        user = _user_from_uid(uid)
+        if user is None or not default_token_generator.check_token(user, token):
+            context['status'] = 'invalid'
+            return render(request, 'users/password_reset_page.html', context)
+
+        if request.method == 'POST':
+            password = request.POST.get('new_password', '')
+            if password != request.POST.get('confirm_password', ''):
+                context['error'] = 'Les deux mots de passe ne correspondent pas.'
+            else:
+                try:
+                    validate_password(password, user=user)
+                except DjangoValidationError as exc:
+                    context['error'] = exc.messages[0]
+                else:
+                    _apply_new_password(user, password)
+                    context['status'] = 'done'
+        response = render(request, 'users/password_reset_page.html', context)
+        # Le jeton est dans l'URL : il n'est jamais transmis à un autre site.
+        # (no-referrer ferait envoyer « Origin: null » et bloquerait le CSRF)
+        response['Referrer-Policy'] = 'same-origin'
+        response['Cache-Control'] = 'no-store'
+        return response
+
+    return handle(request)
 
 
 # ════════════════════════════════════════════════════════════════

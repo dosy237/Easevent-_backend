@@ -99,13 +99,15 @@ class EventPublicSerializer(serializers.ModelSerializer):
         return obj.invitations.filter(status='confirmed').count()
 
     def get_cover_image(self, obj):
-        request = self.context.get('request')
-        url = None
+        """
+        URL ABSOLUE de l'image de couverture, servie par le backend
+        (ou Cloudinary pour les photos uploadées depuis l'application).
+        """
+        from easevent.media import public_url
 
-        # Priorité 0 : Champ image direct (uploadé ou seedé)
-        if obj.cover_image:
-            url = obj.cover_image
-        
+        # Priorité 0 : champ image direct (uploadé ou seedé)
+        url = obj.cover_image
+
         # Priorité 1 : photo uploadée et traitée via EventMedia
         if not url:
             media = obj.media.filter(
@@ -120,23 +122,7 @@ class EventPublicSerializer(serializers.ModelSerializer):
         if not url and obj.template_config:
             url = obj.template_config.get('cover_image')
 
-        if not url:
-            return None
-
-        # Si c'est déjà une URL absolue, on la retourne
-        if url.startswith(('http://', 'https://')):
-            return url
-        
-        # Sinon, on construit l'URL absolue (pour les fichiers locaux dans /media/)
-        if request:
-            from django.conf import settings
-            # Si le chemin commence par 'events/', on s'assure qu'il est préfixé par MEDIA_URL
-            media_url = settings.MEDIA_URL
-            if not url.startswith(media_url):
-                url = f"{media_url}{url}"
-            return request.build_absolute_uri(url)
-        
-        return url
+        return public_url(url, self.context.get('request'))
 
     def get_distance_km(self, obj):
         """

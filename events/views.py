@@ -96,7 +96,7 @@ def liste_evenements_publics(request):
     if search:
         evenements = evenements.filter(title__icontains=search)
 
-    serializer = EventPublicSerializer(evenements, many=True)
+    serializer = EventPublicSerializer(evenements, many=True, context={'request': request})
     return Response({
         'count':  evenements.count(),
         'events': serializer.data
@@ -154,7 +154,7 @@ def detail_evenement_public(request, event_id):
                     status=status.HTTP_403_FORBIDDEN
                 )
 
-    serializer = EventPublicSerializer(event)
+    serializer = EventPublicSerializer(event, context={'request': request})
     return Response(serializer.data)
 
 
@@ -174,7 +174,7 @@ def mes_evenements(request):
         deleted_at__isnull = True,
     ).order_by('-created_at')
 
-    serializer = EventPublicSerializer(evenements, many=True)
+    serializer = EventPublicSerializer(evenements, many=True, context={'request': request})
     return Response({
         'count':  evenements.count(),
         'events': serializer.data,
@@ -322,7 +322,7 @@ def creer_evenement(request):
             template_config  = data.get('template_config'),
         )
 
-        serializer = EventPublicSerializer(event)
+        serializer = EventPublicSerializer(event, context={'request': request})
         return Response({
             'message': 'Événement créé avec succès.',
             'event':   serializer.data,
@@ -366,7 +366,7 @@ def detail_evenement_organisateur(request, event_id):
         'total':     event.invitations.exclude(status='revoked').count(),
     }
 
-    serializer = EventPublicSerializer(event)
+    serializer = EventPublicSerializer(event, context={'request': request})
     return Response({
         'event':       serializer.data,
         'invitations': invitations_count,
@@ -422,7 +422,7 @@ def modifier_evenement(request, event_id):
 
     event.save()
 
-    serializer = EventPublicSerializer(event)
+    serializer = EventPublicSerializer(event, context={'request': request})
     return Response({
         'message': 'Événement modifié avec succès.',
         'event':   serializer.data,

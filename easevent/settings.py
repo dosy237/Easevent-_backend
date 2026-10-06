@@ -24,9 +24,13 @@ DEBUG = config('DEBUG', default=False, cast=bool)
 ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1').split(',')
 BASE_URL = config('BASE_URL', default='http://127.0.0.1:8003')
 
-# URL publique de l'application (Expo web). Les liens envoyés par email
-# (vérification, mot de passe, invitations) pointent vers elle pour ouvrir
-# l'application. Vide → les liens pointent vers les pages HTML du backend.
+# Adresse publique HTTPS du serveur (ex. https://easevent.nitypulse.com).
+# Sert à construire les URL absolues des images renvoyées à l'application
+# mobile : Android refuse les images en http:// dans un APK de production.
+PUBLIC_BASE_URL = config('PUBLIC_BASE_URL', default=BASE_URL).rstrip('/')
+
+# Optionnel : URL d'une version web de l'application. Vide (cas de l'APK) →
+# les liens des emails ouvrent des pages HTML servies par ce backend.
 FRONTEND_URL = config('FRONTEND_URL', default='').rstrip('/')
 
 TESTING = 'test' in sys.argv
@@ -60,6 +64,8 @@ INSTALLED_APPS = [
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
+    # Avant staticfiles : en local aussi, WhiteNoise sert /static/ (comme en production)
+    'whitenoise.runserver_nostatic',
     'django.contrib.staticfiles',
     'django.contrib.postgres',
     'rest_framework',
@@ -67,7 +73,6 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt.token_blacklist',
     'corsheaders',
     'drf_spectacular',
-    'whitenoise.runserver_nostatic',
     'users',
     'events',
     'invitations',
@@ -216,9 +221,16 @@ CELERY_TIMEZONE = 'Europe/Paris'
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+# Images de l'application mobile (logo, illustrations) : static/app/
+STATICFILES_DIRS = [BASE_DIR / 'static']
+WHITENOISE_MAX_AGE = 60 * 60 * 24 * 7   # cache navigateur / app : 7 jours
+from easevent.media import static_headers as _static_headers  # noqa: E402
+WHITENOISE_ADD_HEADERS_FUNCTION = _static_headers
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
+# Django sert /media/ lui-même (photos d'événements) si nginx ne le fait pas
+SERVE_MEDIA = config('SERVE_MEDIA', default=True, cast=bool)
 
 # ─────────────────────────────────────────────────────────────
 # AUTRES CONFIGURATIONS
