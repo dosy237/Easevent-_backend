@@ -63,6 +63,12 @@ import cloudinary.uploader
 # ─────────────────────────────────────────────────────────────────
 from .models      import Event
 from .serializers import EventPublicSerializer
+from .ticketing   import clean_ticketing
+
+import logging
+logger = logging.getLogger(__name__)
+
+VISIBILITIES = ('public', 'private')
 
 
 # ════════════════════════════════════════════════════════════════
@@ -225,9 +231,10 @@ def upload_image(request):
             'url':       result['secure_url'],
             'public_id': result['public_id'],
         })
-    except Exception as e:
+    except Exception:
+        logger.exception("Erreur d'upload Cloudinary")
         return Response(
-            {'detail': f'Erreur upload Cloudinary : {str(e)}'},
+            {'detail': "Impossible d'envoyer l'image pour le moment. Réessayez."},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
@@ -291,6 +298,19 @@ def creer_evenement(request):
             status=status.HTTP_400_BAD_REQUEST
         )
 
+    if data.get('event_type') not in Event.EventType.values:
+        return Response({'detail': "Type d'événement invalide."}, status=status.HTTP_400_BAD_REQUEST)
+
+    visibility = data.get('visibility', 'public')
+    if visibility not in VISIBILITIES:
+        return Response({'detail': 'Visibilité invalide (public ou private).'}, status=status.HTTP_400_BAD_REQUEST)
+
+    # ── Billetterie & dress code (M23) ───────────────────────────
+    ticketing, ticket_errors = clean_ticketing(data)
+    if ticket_errors:
+        first = next(iter(ticket_errors.values()))
+        return Response({'detail': first, **ticket_errors}, status=status.HTTP_400_BAD_REQUEST)
+
     # ── Génération du subdomain unique ───────────────────────────
     # slugify("Mon Mariage 2026") → "mon-mariage-2026"
     # On ajoute un compteur si le slug existe déjà
@@ -304,7 +324,7 @@ def creer_evenement(request):
     try:
         event = Event.objects.create(
             organizer        = request.user,
-            title            = data['title'],
+            title            = str(data['title']).strip()[:100],
             event_type       = data['event_type'],
             description      = data.get('description', ''),
             start_date       = start_date_parsed,
@@ -317,10 +337,11 @@ def creer_evenement(request):
             cover_image      = data.get('cover_image'),
             ambiance         = data.get('ambiance', ''),
             palette          = data.get('palette'),
-            visibility       = data.get('visibility', 'draft'),
+            visibility       = visibility,
             status           = 'draft',  # Toujours brouillon à la création
             subdomain        = subdomain,
             template_config  = data.get('template_config'),
+            **ticketing,
         )
 
         serializer = EventPublicSerializer(event, context={'request': request})
@@ -329,9 +350,10 @@ def creer_evenement(request):
             'event':   serializer.data,
         }, status=status.HTTP_201_CREATED)
 
-    except Exception as e:
+    except Exception:
+        logger.exception("Erreur lors de la création d'un événement")
         return Response(
-            {'detail': f'Erreur lors de la création : {str(e)}'},
+            {'detail': "Impossible de créer l'événement pour le moment. Réessayez."},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
@@ -410,7 +432,10 @@ def modifier_evenement(request, event_id):
     if 'cover_image'      in data: event.cover_image      = data['cover_image']
     if 'ambiance'         in data: event.ambiance         = data['ambiance']
     if 'palette'          in data: event.palette          = data['palette']
-    if 'visibility'       in data: event.visibility       = data['visibility']
+    if 'visibility'       in data:
+        if data['visibility'] not in VISIBILITIES:
+            return Response({'detail': 'Visibilité invalide (public ou private).'}, status=status.HTTP_400_BAD_REQUEST)
+        event.visibility = data['visibility']
     if 'template_config'  in data: event.template_config  = data['template_config']
 
     if 'start_date' in data:
@@ -420,6 +445,14 @@ def modifier_evenement(request, event_id):
     if 'end_date' in data:
         parsed = parse_datetime(data['end_date'])
         if parsed: event.end_date = parsed
+
+    # Billetterie & dress code
+    ticketing, ticket_errors = clean_ticketing(data, current=event)
+    if ticket_errors:
+        first = next(iter(ticket_errors.values()))
+        return Response({'detail': first, **ticket_errors}, status=status.HTTP_400_BAD_REQUEST)
+    for field, value in ticketing.items():
+        setattr(event, field, value)
 
     event.save()
 

@@ -62,6 +62,16 @@ class EventPublicSerializer(serializers.ModelSerializer):
             'subdomain',
             'cover_image',      # calculé — URL de l'image de couverture
             'distance_km',      # calculé — distance en km (ou null)
+            # Billetterie (M23) — prix en chaîne décimale "25.00"
+            'is_paid',
+            'price',
+            'currency',
+            'max_guests',
+            'dress_code',
+            'visibility',
+            'status',
+            'is_online',
+            'online_link',
         ]
 
     def get_date_formatted(self, obj):

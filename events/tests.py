@@ -240,3 +240,69 @@ class EventAPITest(TestCase):
         self.client.credentials()
         response = self.client.get('/api/events/mes-evenements/')
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+# ─────────────────────────────────────────────────────────────
+# CLASSE 3 — Billetterie & dress code (M23)
+# ─────────────────────────────────────────────────────────────
+from django.core.cache import cache
+
+
+class TicketingFieldsTest(TestCase):
+
+    def setUp(self):
+        cache.clear()
+        self.client = APIClient()
+        self.user = User.objects.create_user(email='orga@easevent.fr', password='x', first_name='O', last_name='R')
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {RefreshToken.for_user(self.user).access_token}')
+        start = timezone.now() + timedelta(days=10)
+        self.base = {
+            'title': 'Summit Innovation AI', 'event_type': 'conference', 'description': 'd',
+            'start_date': start.strftime('%Y-%m-%dT%H:%M:%S'),
+            'end_date': (start + timedelta(hours=8)).strftime('%Y-%m-%dT%H:%M:%S'),
+            'location_address': 'Station F', 'visibility': 'public',
+        }
+
+    def _create(self, **extra):
+        return self.client.post('/api/events/create/', {**self.base, **extra}, format='json')
+
+    def test_evenement_payant(self):
+        r = self._create(is_paid=True, price='25,00', currency='EUR', max_guests=250,
+                         dress_code='Business — veste conseillée')
+        self.assertEqual(r.status_code, status.HTTP_201_CREATED, r.data)
+        e = r.data['event']
+        self.assertTrue(e['is_paid'])
+        self.assertEqual(e['price'], '25.00')
+        self.assertEqual(e['max_guests'], 250)
+        self.assertEqual(e['dress_code'], 'Business — veste conseillée')
+
+    def test_evenement_gratuit_prix_zero(self):
+        r = self._create(is_paid=False, price='40')
+        self.assertEqual(r.data['event']['price'], '0.00')
+        self.assertFalse(r.data['event']['is_paid'])
+
+    def test_payant_sans_prix_refuse(self):
+        r = self._create(is_paid=True, price='')
+        self.assertEqual(r.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('price', r.data)
+
+    def test_valeurs_invalides(self):
+        self.assertEqual(self._create(is_paid=True, price='-3').status_code, 400)
+        self.assertEqual(self._create(max_guests=0).status_code, 400)
+        self.assertEqual(self._create(dress_code='x' * 81).status_code, 400)
+        self.assertEqual(self._create(dress_code='<b>chic</b>').status_code, 400)
+        self.assertEqual(self._create(visibility='secret').status_code, 400)
+
+    def test_compatibilite_template_config(self):
+        r = self._create(template_config={'is_paid': True, 'price': 12.5, 'max_guests': 40})
+        self.assertEqual(r.data['event']['price'], '12.50')
+        self.assertEqual(r.data['event']['max_guests'], 40)
+
+    def test_modification_partielle_conserve_le_prix(self):
+        event_id = self._create(is_paid=True, price='25').data['event']['id']
+        r = self.client.patch(f'/api/events/{event_id}/update/', {'dress_code': 'Tenue de soirée'}, format='json')
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.data['event']['price'], '25.00')
+        self.assertEqual(r.data['event']['dress_code'], 'Tenue de soirée')
+        r = self.client.patch(f'/api/events/{event_id}/update/', {'is_paid': False}, format='json')
+        self.assertEqual(r.data['event']['price'], '0.00')
