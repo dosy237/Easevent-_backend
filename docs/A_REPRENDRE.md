@@ -89,3 +89,25 @@ La messagerie (M15 / M16) se met à jour toutes les 4 s quand une conversation e
 ouverte (seuls les nouveaux messages sont téléchargés). Pour du temps réel strict,
 Django Channels + Redis (déjà dans requirements.txt) pourront remplacer ce mécanisme
 sans changer l'API.
+
+## 10. Ouverture de l'app depuis les liens d'invitation et stores
+
+Identifiant de l'application fixé dans `app.json` : **`com.eranis.easevent`** (Android et iOS).
+- [ ] Confirmer cet identifiant AVANT la première publication (il ne peut plus changer ensuite).
+      Si un APK a déjà été construit avec un autre identifiant, le dire : on alignera.
+
+Variables du `.env` du serveur :
+- [ ] `ANDROID_STORE_URL` = page Play Store (ex. `https://play.google.com/store/apps/details?id=com.eranis.easevent`).
+      Le jeton d'invitation y est ajouté automatiquement (`referrer`) : après installation, l'app
+      ouvre directement l'invitation.
+- [ ] `IOS_STORE_URL` = page App Store (quand l'app iOS sera publiée).
+- [ ] `APP_DOWNLOAD_URL` = lien direct de l'APK tant que l'app n'est pas sur le Play Store (facultatif).
+- [ ] `ANDROID_CERT_SHA256` = empreinte SHA-256 du certificat de signature (EAS : `eas credentials`,
+      ou Play Console › Intégrité de l'application) → les liens https://easevent.nitypulse.com/i/…
+      s'ouvrent directement dans l'app, sans passer par le navigateur.
+- [ ] `APPLE_TEAM_ID` (compte Apple Developer) → même chose sur iPhone.
+
+Retrouver une invitation après installation :
+- Android : automatique (referrer du Play Store).
+- Tous : le numéro vérifié par SMS (Profil › Téléphone, ou bannière dans Mes tickets) et l'email
+  vérifié rattachent automatiquement les invitations reçues. Nécessite Twilio (section 4).
