@@ -369,3 +369,64 @@ class CustomAmbianceAndDemoCoversTest(TicketingFieldsTest):
         with self.settings(PUBLIC_BASE_URL='https://easevent.example.com'):
             self.assertEqual(public_url('/static/app/covers/gala-1.jpg'),
                              'https://easevent.example.com/static/app/covers/gala-1.jpg')
+
+
+class GeoTest(TestCase):
+    """Recherche d'adresse (Photon par défaut, Google si clé) et carte du lieu."""
+
+    def setUp(self):
+        from django.core.cache import cache
+        from rest_framework.test import APIClient
+        from rest_framework_simplejwt.tokens import RefreshToken
+        cache.clear()
+        self.client = APIClient()
+        self.user = User.objects.create_user(email='geo@x.fr', password='x', first_name='G', last_name='O', is_verified=True)
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {RefreshToken.for_user(self.user).access_token}')
+
+    def test_recherche_photon(self):
+        from unittest import mock
+
+        class R:
+            status_code = 200
+            def raise_for_status(self): pass
+            def json(self):
+                return {'features': [{'geometry': {'coordinates': [2.3711, 48.8341]}, 'properties': {
+                    'name': 'Station F', 'street': 'Parvis Alan Turing', 'housenumber': '5', 'postcode': '75013',
+                    'city': 'Paris', 'country': 'France', 'osm_type': 'W', 'osm_id': 1}}]}
+        with mock.patch('events.geo.requests.get', return_value=R()):
+            res = self.client.get('/api/geo/search/', {'q': 'station f'}).data
+        self.assertEqual(res['provider'], 'osm')
+        self.assertEqual(res['results'][0]['address'], 'Station F, 5 Parvis Alan Turing, 75013 Paris, France')
+        self.assertEqual((res['results'][0]['lat'], res['results'][0]['lng']), (48.8341, 2.3711))
+        self.assertEqual(self.client.get('/api/geo/search/', {'q': 'ab'}).data['results'], [])
+
+    def test_carte_osm_mise_en_cache(self):
+        import io
+        import tempfile
+        from unittest import mock
+        from PIL import Image
+        buf = io.BytesIO(); Image.new('RGB', (256, 256), (220, 220, 220)).save(buf, 'PNG')
+
+        class Tile:
+            content = buf.getvalue()
+            def raise_for_status(self): pass
+        with tempfile.TemporaryDirectory() as tmp, self.settings(MEDIA_ROOT=tmp), \
+                mock.patch('requests.Session.get', return_value=Tile()) as get:
+            r = self.client.get('/api/geo/static-map/', {'lat': '48.8341', 'lng': '2.3711'})
+            self.assertEqual((r.status_code, r['Content-Type']), (200, 'image/png'))
+            calls = get.call_count
+            self.client.get('/api/geo/static-map/', {'lat': '48.8341', 'lng': '2.3711'})
+            self.assertEqual(get.call_count, calls)                     # 2e fois : fichier en cache
+        self.assertEqual(self.client.get('/api/geo/static-map/', {'lat': '999', 'lng': '2'}).status_code, 404)
+
+    def test_carte_dans_le_detail(self):
+        from django.utils import timezone
+        from datetime import timedelta
+        start = timezone.now() + timedelta(days=3)
+        e = Event.objects.create(organizer=self.user, title='Gala', event_type='gala', start_date=start,
+                                 end_date=start + timedelta(hours=3), status='published', visibility='public',
+                                 location_address='Station F, Paris', latitude=48.8341, longitude=2.3711)
+        body = self.client.get(f'/api/events/publics/{e.id}/').data
+        data = body.get('event', body)
+        self.assertIn('destination=48.8341', data['map']['directions'])
+        self.assertIn('/api/geo/static-map/', data['map']['image'])

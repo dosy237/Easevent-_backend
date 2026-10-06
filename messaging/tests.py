@@ -119,3 +119,55 @@ class MessagingTest(TestCase):
         self.assertEqual(notifs.count(), 1)
         self.assertIn('À bientôt', notifs.get().body)
         self.assertEqual(Message.objects.filter(kind='text').count(), 3)
+
+
+class MediaMessagesTest(MessagingTest):
+    """Photos (sans métadonnées, lien signé) et itinéraire."""
+
+    def _png(self):
+        import io
+        from PIL import Image
+        buf = io.BytesIO()
+        Image.new('RGB', (2400, 1200), (200, 30, 30)).save(buf, 'PNG')
+        buf.seek(0)
+        buf.name = 'capture.png'
+        return buf
+
+    def test_photo_reduite_et_lien_signe(self):
+        import tempfile
+        conv_id = self.open_as_orga().data['id']
+        with tempfile.TemporaryDirectory() as tmp, self.settings(PRIVATE_MEDIA_ROOT=tmp):
+            r = self.c.post(f'/api/conversations/{conv_id}/messages/', {'image': self._png(), 'body': 'Le plan'}, format='multipart')
+            self.assertEqual(r.status_code, 201, r.data)
+            self.assertEqual((r.data['kind'], r.data['image']['width']), ('image', 1600))
+            url = r.data['image']['url']
+            path = url[url.index('/api/'):]
+            self.c.credentials()
+            img = self.c.get(path)
+            self.assertEqual(img['Content-Type'], 'image/jpeg')
+            self.assertEqual(self.c.get('/api/conversations/attachments/faux/').status_code, 404)
+            # Suppression de la conversation → fichier effacé
+            from pathlib import Path
+            self.assertEqual(len(list(Path(tmp).rglob('*.jpg'))), 1)
+            Message.objects.filter(kind='image').delete()
+            self.assertEqual(len(list(Path(tmp).rglob('*.jpg'))), 0)
+
+    def test_fichier_qui_n_est_pas_une_image(self):
+        import io
+        conv_id = self.open_as_orga().data['id']
+        fake = io.BytesIO(b'%PDF-1.4 pas une image')
+        fake.name = 'x.png'
+        r = self.c.post(f'/api/conversations/{conv_id}/messages/', {'image': fake}, format='multipart')
+        self.assertEqual(r.data['code'], 'invalid_image')
+
+    def test_itineraire(self):
+        self.event.location_address = 'Station F, 5 Parvis Alan Turing, Paris'
+        self.event.latitude, self.event.longitude = 48.834, 2.371
+        self.event.save()
+        conv_id = self.open_as_orga().data['id']
+        r = self.c.post(f'/api/conversations/{conv_id}/messages/', {'kind': 'location'}, format='json')
+        loc = r.data['location']
+        self.assertIn('google.com/maps/dir/?api=1&destination=48.834', loc['directions'])
+        self.assertIn('/api/geo/static-map/?lat=48.83400&lng=2.37100', loc['map_image'])
+        auth(self.c, self.claire)
+        self.assertEqual(self.c.get('/api/conversations/').data['results'][0]['last_message']['text'], 'Itinéraire')

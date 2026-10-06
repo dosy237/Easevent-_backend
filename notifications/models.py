@@ -28,16 +28,20 @@ class Notification(models.Model):
         REMINDER            = 'reminder',            'Rappel'
         PAYMENT_SUCCEEDED   = 'payment_succeeded',   'Paiement confirmé'
         PAYMENT_FAILED      = 'payment_failed',      'Paiement échoué'
+        FRIEND_REQUEST      = 'friend_request',      "Demande d'ami"
+        FRIEND_ACCEPTED     = 'friend_accepted',     'Demande acceptée'
 
     class Category(models.TextChoices):
         EVENTS   = 'events',   'Événements'
         MESSAGES = 'messages', 'Messages'
         SYSTEM   = 'system',   'Système'
+        SOCIAL   = 'social',   'Amis'
 
     CATEGORY_OF = {
         'invitation_received': 'events', 'ticket_to_validate': 'events', 'ticket_generated': 'events',
         'daily_summary': 'events', 'reminder': 'events', 'message_received': 'messages',
         'payment_succeeded': 'system', 'payment_failed': 'system',
+        'friend_request': 'social', 'friend_accepted': 'social',
     }
 
     id         = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

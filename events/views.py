@@ -427,7 +427,18 @@ def modifier_evenement(request, event_id):
     if 'title'            in data: event.title            = data['title']
     if 'description'      in data: event.description      = data['description']
     if 'event_type'       in data: event.event_type       = data['event_type']
-    if 'location_address' in data: event.location_address = data['location_address']
+    if 'location_address' in data:
+        if data['location_address'] != event.location_address and 'latitude' not in data:
+            # Nouvelle adresse saisie sans suggestion : anciennes coordonnées invalides
+            event.latitude = event.longitude = None
+        event.location_address = data['location_address']
+    for field in ('latitude', 'longitude'):
+        if field in data:
+            try:
+                value = None if data[field] in (None, '') else float(data[field])
+            except (TypeError, ValueError):
+                return Response({'detail': 'Coordonnées invalides.'}, status=status.HTTP_400_BAD_REQUEST)
+            setattr(event, field, value)
     if 'is_online'        in data: event.is_online        = data['is_online']
     if 'online_link'      in data: event.online_link      = data['online_link']
     if 'cover_image'      in data: event.cover_image      = data['cover_image']

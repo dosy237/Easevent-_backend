@@ -18,7 +18,10 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import UserRateThrottle
 
-from easevent.media import public_url
+from django.core import signing
+from django.http import FileResponse
+
+from easevent.media import absolute_url, public_url
 from events.models import Event
 
 from . import services
@@ -72,7 +75,10 @@ def _summary(conv, user, request):
         'event':  {'id': str(conv.event.id), 'title': conv.event.title,
                    'cover_image': public_url(conv.event.cover_image, request) if conv.event.cover_image else None},
         'last_message': {
-            'text':       services.PREVIEW.get(last.system_type, '') if last.kind == 'system' else last.body[:140],
+            'text':       (services.PREVIEW.get(last.system_type, '') if last.kind == 'system'
+                           else (last.body[:140] or services.KIND_PREVIEW.get(last.kind, '')) if last.kind == 'text'
+                           else services.KIND_PREVIEW.get(last.kind, '')),
+            'kind':       last.kind,
             'is_system':  last.kind == 'system',
             'system_type': last.system_type,
             'from_me':    last.sender_id == user.id,
@@ -84,8 +90,12 @@ def _summary(conv, user, request):
     }
 
 
-def _message(msg, user, other_read_at):
-    return {
+ATTACHMENT_SALT = 'easevent.message.attachment'
+ATTACHMENT_TTL = 60 * 60 * 24
+
+
+def _message(msg, user, other_read_at, request=None):
+    data = {
         'id':          str(msg.id),
         'kind':        msg.kind,
         'system_type': msg.system_type,
@@ -94,6 +104,15 @@ def _message(msg, user, other_read_at):
         'created_at':  msg.created_at.isoformat(),
         'read':        bool(other_read_at and msg.sender_id == user.id and other_read_at >= msg.created_at),
     }
+    if msg.kind == 'image' and msg.attachment:
+        # Lien signé valable 24 h : l'image d'une conversation n'est jamais publique
+        token = signing.dumps(str(msg.id), salt=ATTACHMENT_SALT)
+        data['image'] = {'url': absolute_url(f'/api/conversations/attachments/{token}/', request),
+                         'width': msg.meta.get('width'), 'height': msg.meta.get('height')}
+    elif msg.kind == 'location':
+        from events.geo import static_map_url
+        data['location'] = {**msg.meta, 'map_image': static_map_url(msg.meta.get('lat'), msg.meta.get('lng'), request)}
+    return data
 
 
 @api_view(['GET', 'POST'])
@@ -186,10 +205,15 @@ def messages(request, conversation_id):
         if side == 'participant' and not services.may_converse(conv.event, request.user):
             return Response({'detail': "Vous n'avez plus accès à cet événement."}, status=status.HTTP_403_FORBIDDEN)
         try:
-            msg = services.send(conv, request.user, request.data.get('body'))
+            if request.FILES.get('image'):
+                msg = services.send_image(conv, request.user, request.FILES['image'], request.data.get('body', ''))
+            elif request.data.get('kind') == 'location':
+                msg = services.send_location(conv, request.user)
+            else:
+                msg = services.send(conv, request.user, request.data.get('body'))
         except services.MessagingError as exc:
             return Response({'detail': exc.message, 'code': exc.code}, status=exc.status)
-        return Response(_message(msg, request.user, None), status=status.HTTP_201_CREATED)
+        return Response(_message(msg, request.user, None, request), status=status.HTTP_201_CREATED)
 
     qs = conv.messages.all()
     after = parse_datetime(request.query_params.get('after') or '')
@@ -208,7 +232,7 @@ def messages(request, conversation_id):
     other = conv.other_side(side)
     other_read_at = getattr(conv, f'{other}_read_at')
     return Response({
-        'results':  [_message(m, request.user, other_read_at) for m in items],
+        'results':  [_message(m, request.user, other_read_at, request) for m in items],
         'has_more': has_more,
         'other_read_at': other_read_at.isoformat() if other_read_at else None,
         'other_typing': services.is_recent(getattr(conv, f'{other}_typing_at'), services.TYPING_WINDOW),
@@ -222,3 +246,20 @@ def typing(request, conversation_id):
     conv = _own(request, conversation_id)
     services.set_typing(conv, conv.side(request.user))
     return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+def attachment(request, token):
+    """GET /api/conversations/attachments/<jeton>/ — photo d'une conversation (lien signé 24 h)."""
+    from pathlib import Path
+    from django.conf import settings
+    try:
+        msg = Message.objects.get(pk=signing.loads(token, salt=ATTACHMENT_SALT, max_age=ATTACHMENT_TTL), kind='image')
+    except (signing.BadSignature, Message.DoesNotExist, ValueError):
+        raise Http404
+    path = Path(settings.PRIVATE_MEDIA_ROOT) / msg.attachment
+    if not path.is_file():
+        raise Http404
+    response = FileResponse(open(path, 'rb'), content_type='image/jpeg')
+    response['Cache-Control'] = 'private, max-age=86400'
+    response['X-Content-Type-Options'] = 'nosniff'
+    return response

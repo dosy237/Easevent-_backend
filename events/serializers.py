@@ -40,6 +40,7 @@ class EventPublicSerializer(serializers.ModelSerializer):
     spots_left         = serializers.SerializerMethodField()
     my_ticket          = serializers.SerializerMethodField()
     organizer          = serializers.SerializerMethodField()
+    map                = serializers.SerializerMethodField()
 
     class Meta:
         # model : quel modèle Django ce serializer traduit
@@ -83,6 +84,7 @@ class EventPublicSerializer(serializers.ModelSerializer):
             'spots_left',          # places restantes (null = illimité)
             'my_ticket',           # ticket actif de l'utilisateur connecté (détail)
             'organizer',           # nom de l'organisateur
+            'map',                 # carte du lieu + liens Google Maps (voir, itinéraire)
         ]
 
     def get_date_formatted(self, obj):
@@ -167,6 +169,18 @@ class EventPublicSerializer(serializers.ModelSerializer):
         if not ticket:
             return None
         return {'id': str(ticket.id), 'status': ticket.status, 'payment_status': ticket.payment_status}
+
+    def get_map(self, obj):
+        from .geo import maps_links, static_map_url
+        if obj.is_online or not (obj.location_address or obj.latitude is not None):
+            return None
+        lat = float(obj.latitude) if obj.latitude is not None else None
+        lng = float(obj.longitude) if obj.longitude is not None else None
+        return {
+            'image': static_map_url(lat, lng, self.context.get('request')),
+            'lat': lat, 'lng': lng,
+            **maps_links(obj.location_address, lat, lng),
+        }
 
     def get_organizer(self, obj):
         return {'id': str(obj.organizer_id), 'name': obj.organizer.full_name}

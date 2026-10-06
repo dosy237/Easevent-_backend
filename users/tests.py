@@ -150,6 +150,7 @@ class AuthAPITest(TestCase):
             'last_name':        'Membre',
             'accepted_privacy': True,
             'marketing_opt_in': True,
+            'phone_number':     '+33 6 11 22 33 44',
         }
         response = self.client.post('/api/auth/register/', payload, format='json')
 
@@ -307,6 +308,7 @@ class AccountFlowTest(TestCase):
         payload = {
             'email': 'sarah@easevent.fr', 'password': 'Jardin-Emeraude-26',
             'first_name': 'Sarah', 'last_name': 'Martin', 'accepted_privacy': True,
+            'phone_number': '+33 6 11 22 33 44',
         }
         payload.update(overrides)
         return self.client.post('/api/auth/register/', payload, format='json')
@@ -331,6 +333,66 @@ class AccountFlowTest(TestCase):
         self._register()
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn('https://app.easevent.test/verify/', mail.outbox[0].body)
+
+    # ── Code de vérification : email ou SMS au choix ──────────
+    def _code_from_mail(self):
+        import re
+        return re.search(r'code de vérification : (\d{6})', mail.outbox[-1].body).group(1)
+
+    def test_numero_obligatoire(self):
+        response = self._register(phone_number='')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('phone_number', response.data)
+
+    def test_code_par_email_active_le_compte(self):
+        r = self._register()
+        self.assertEqual(r.data['channel'], 'email')
+        code = self._code_from_mail()
+        self.assertIn(code, mail.outbox[-1].subject)
+        bad = self.client.post('/api/auth/verify-code/', {'email': 'sarah@easevent.fr', 'code': '000000' if code != '000000' else '111111'}, format='json')
+        self.assertEqual(bad.data['code'], 'wrong_code')
+        r = self.client.post('/api/auth/verify-code/', {'email': 'sarah@easevent.fr', 'code': code}, format='json')
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertIn('access', r.data)
+        self.assertTrue(User.objects.get(email='sarah@easevent.fr').is_verified)
+
+    def test_code_email_essais_limites(self):
+        self._register()
+        code = self._code_from_mail()
+        for _ in range(5):
+            self.client.post('/api/auth/verify-code/', {'email': 'sarah@easevent.fr', 'code': '999999' if code != '999999' else '888888'}, format='json')
+        cache.clear()
+        r = self.client.post('/api/auth/verify-code/', {'email': 'sarah@easevent.fr', 'code': code}, format='json')
+        self.assertEqual(r.data['code'], 'too_many_attempts')
+
+    def test_code_par_sms_active_le_compte_et_le_numero(self):
+        import re
+        from unittest import mock
+
+        class Ok:
+            status_code = 201
+            @staticmethod
+            def json():
+                return {}
+        twilio = dict(TWILIO_ACCOUNT_SID='AC', TWILIO_AUTH_TOKEN='t', TWILIO_FROM_NUMBER='+33700000000')
+        with self.settings(**twilio), mock.patch('invitations.sms.requests.post', return_value=Ok()) as post:
+            r = self._register(verification_channel='sms')
+            self.assertEqual(r.data['channel'], 'sms')
+            self.assertEqual(len(mail.outbox), 0)
+            code = re.search(r'est (\d{6})', post.call_args.kwargs['data']['Body']).group(1)
+            r = self.client.post('/api/auth/verify-code/', {'email': 'sarah@easevent.fr', 'code': code, 'channel': 'sms'}, format='json')
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertTrue(r.data['user']['phone_verified'])
+
+    def test_sms_indisponible_bascule_sur_email(self):
+        with self.settings(TWILIO_ACCOUNT_SID=''):
+            r = self._register(verification_channel='sms')
+        self.assertEqual(r.data['channel'], 'email')
+        self.assertEqual(len(mail.outbox), 1)
+
+    def test_verify_code_compte_inconnu_reponse_generique(self):
+        r = self.client.post('/api/auth/verify-code/', {'email': 'personne@x.fr', 'code': '123456'}, format='json')
+        self.assertEqual(r.data['code'], 'wrong_code')
 
     # ── M03 : vérification de l'email ─────────────────────────
     def test_jeton_stocke_sous_forme_hachee(self):

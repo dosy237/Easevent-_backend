@@ -126,13 +126,14 @@ class RegisterSerializer(serializers.Serializer):
     accepted_privacy_at = serializers.DateTimeField(required=False, allow_null=True)
     marketing_opt_in = serializers.BooleanField(required=False, default=False)
     invitation_token = serializers.CharField(required=False, allow_blank=True, max_length=64)
-    # Facultatif : retrouver les invitations reçues par SMS (vérifié ensuite par code)
-    phone_number     = serializers.CharField(required=False, allow_blank=True, max_length=30)
+    # Obligatoire : relie le compte aux invitations reçues par SMS (vérifié par code)
+    phone_number     = serializers.CharField(max_length=30, error_messages={
+        'required': 'Le numéro de téléphone est requis.', 'blank': 'Le numéro de téléphone est requis.'})
+    # Canal du code de vérification choisi par l'utilisateur
+    verification_channel = serializers.ChoiceField(choices=['email', 'sms'], required=False, default='email')
 
     def validate_phone_number(self, value):
         from invitations.services import normalize_phone
-        if not (value or '').strip():
-            return ''
         e164 = normalize_phone(value)
         if not e164:
             raise serializers.ValidationError('Numéro invalide : indiquez-le avec son indicatif (ex. +33 6 12 34 56 78).')

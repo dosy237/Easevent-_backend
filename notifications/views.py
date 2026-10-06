@@ -22,7 +22,7 @@ from .models import Notification
 from .services import DEFAULT_PREFS, prefs_of, refresh_scheduled
 
 PAGE_SIZE = 30
-CATEGORIES = ('events', 'messages', 'system')
+CATEGORIES = ('events', 'messages', 'social', 'system')
 
 
 def _initials(user):
@@ -47,8 +47,18 @@ def _serialize(n, request):
         'invitation': {'id': str(inv.id), 'status': inv.status,
                        'can_answer': inv.status in ('sent', 'opened') and inv.is_valid} if inv else None,
         'ticket_id':  str(n.ticket_id) if n.ticket_id else None,
+        # Demande d'ami : Accepter / Refuser tant qu'elle est en attente
+        'friendship': _friendship(n),
         'data':       n.data,
     }
+
+
+def _friendship(n):
+    if n.type != 'friend_request' or not n.data.get('friendship_id'):
+        return None
+    from social.models import Friendship
+    f = Friendship.objects.filter(pk=n.data['friendship_id']).first()
+    return {'id': str(f.id), 'status': f.status, 'can_answer': f.status == 'pending'} if f else {'status': 'gone', 'can_answer': False}
 
 
 def _unread(user):

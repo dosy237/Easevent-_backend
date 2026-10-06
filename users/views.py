@@ -122,22 +122,23 @@ def _backend_url(request, path):
     return f"{settings.BASE_URL.rstrip('/')}{path}"
 
 
-def send_verification_email(user, token, request=None):
+def send_verification_email(user, token, request=None, code=None):
     verification_url = _frontend_link(
         f"/verify/{token}",
         _backend_url(request, f"/api/auth/verify/{token}/"),
     )
-    context = {'user': user, 'verification_url': verification_url}
+    context = {'user': user, 'verification_url': verification_url, 'code': code}
     html_content = render_to_string('users/emails/verify_email.html', context)
     text_content = (
         f"Bonjour {user.first_name},\n\n"
         "Merci de vous être inscrit sur Easevent.\n\n"
-        f"Confirmez votre adresse email en ouvrant ce lien :\n{verification_url}\n\n"
-        "Ce lien expire dans 24 heures.\n\n"
+        + (f"Votre code de vérification : {code}\n\n" if code else "")
+        + f"Ou confirmez votre adresse email en ouvrant ce lien :\n{verification_url}\n\n"
+        "Ce code et ce lien expirent dans 24 heures.\n\n"
         "L'équipe Easevent"
     )
     send_mail(
-        subject        = 'Confirmez votre adresse email — Easevent',
+        subject        = f'Votre code Easevent : {code}' if code else 'Confirmez votre adresse email — Easevent',
         message        = text_content,
         html_message   = html_content,
         from_email     = settings.DEFAULT_FROM_EMAIL,
@@ -261,7 +262,7 @@ def register_view(request):
             if claim_for_new_user(invitation_token, user):
                 user.is_verified = True
                 user.save(update_fields=['is_verified', 'updated_at'])
-        token = None if user.is_verified else create_email_verification(user)
+        token = code = None
 
     if user.is_verified:
         from .phone import claim_invitations
@@ -277,18 +278,88 @@ def register_view(request):
             'invitation_claimed':    True,
         }, status=status.HTTP_201_CREATED)
 
-    try:
-        send_verification_email(user, token, request)
-    except Exception:
-        # Le compte existe : l'utilisateur pourra redemander le lien depuis M03
-        logger.exception("Échec d'envoi de l'email de vérification")
-
+    channel = _send_account_code(user, data.get('verification_channel') or 'email', request)
     return Response({
-        'message':               'Compte créé. Vérifiez votre email pour activer votre compte.',
+        'message':               ('Compte créé. Saisissez le code reçu par SMS.' if channel == 'sms'
+                                  else 'Compte créé. Saisissez le code reçu par email.'),
         'requires_verification': True,
+        'channel':               channel,
         'email':                 user.email,
+        'phone':                 user_payload(user)['phone'],
         'user':                  user_payload(user),
     }, status=status.HTTP_201_CREATED)
+
+
+def _send_account_code(user, channel, request=None):
+    """
+    Envoie le code de vérification du compte par SMS ou par email.
+    SMS indisponible → email. Retourne le canal réellement utilisé.
+    """
+    from invitations.crypto import decrypt
+    from .phone import PhoneError, send_code
+
+    if channel == 'sms' and user.phone_number:
+        try:
+            send_code(user, decrypt(user.phone_number))
+            return 'sms'
+        except PhoneError:
+            logger.warning("Code d'inscription par SMS impossible : envoi par email")
+    token, code = create_email_verification(user, with_code=True)
+    try:
+        send_verification_email(user, token, request, code=code)
+    except Exception:
+        # Le compte existe : l'utilisateur pourra redemander un code
+        logger.exception("Échec d'envoi de l'email de vérification")
+    return 'email'
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+@throttle_classes([LoginThrottle])
+def verify_code_view(request):
+    """
+    POST /api/auth/verify-code/   Body : { email, code, channel: 'email' | 'sms' }
+    Active le compte avec le code reçu (email ou SMS) et connecte l'utilisateur.
+    Réponse identique si le compte n'existe pas (pas d'énumération).
+    """
+    import hmac
+    from .phone import PhoneError, verify_code
+    from .tokens import code_hash
+    from .models import EmailVerification
+
+    bad = Response({'detail': 'Code incorrect ou expiré.', 'code': 'wrong_code'}, status=status.HTTP_400_BAD_REQUEST)
+    email = str(request.data.get('email', '')).strip()
+    code = ''.join(ch for ch in str(request.data.get('code', '')) if ch.isdigit())
+    user = User.objects.filter(email__iexact=email, is_active=True, deleted_at__isnull=True).first() if email else None
+    if user is None or len(code) != 6:
+        return bad
+    if user.is_verified:
+        return Response({'detail': 'Ce compte est déjà vérifié : connectez-vous.', 'code': 'already_verified'},
+                        status=status.HTTP_400_BAD_REQUEST)
+
+    if request.data.get('channel') == 'sms':
+        try:
+            verify_code(user, code)
+        except PhoneError as exc:
+            return Response({'detail': exc.message, 'code': exc.code}, status=exc.status)
+        user.is_verified = True
+        user.save(update_fields=['is_verified', 'updated_at'])
+    else:
+        ev = EmailVerification.objects.filter(user=user).first()
+        if ev is None or ev.is_expired() or not ev.code_hash:
+            return Response({'detail': 'Ce code a expiré. Demandez un nouveau code.', 'code': 'expired'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if ev.attempts >= 5:
+            return Response({'detail': 'Trop d’essais. Demandez un nouveau code.', 'code': 'too_many_attempts'},
+                            status=status.HTTP_429_TOO_MANY_REQUESTS)
+        if not hmac.compare_digest(ev.code_hash, code_hash(user, code)):
+            ev.attempts += 1
+            ev.save(update_fields=['attempts'])
+            return bad
+        user = _verify_user(ev)
+
+    tokens = get_tokens_for_user(user)
+    return Response({'access': tokens['access'], 'refresh': tokens['refresh'], 'user': user_payload(user)})
 
 
 # ════════════════════════════════════════════════════════════════
@@ -364,19 +435,16 @@ def resend_verification_view(request):
     POST /api/auth/resend-verification/   Body : { "email": "..." }
     Réponse identique que le compte existe ou non (pas d'énumération).
     """
-    generic = {'detail': 'Si un compte non vérifié existe pour cet email, un nouveau lien a été envoyé.'}
+    generic = {'detail': 'Si un compte non vérifié existe pour cet email, un nouveau code a été envoyé.'}
     email = str(request.data.get('email', '')).strip()
     user = User.objects.filter(
         email__iexact=email, is_verified=False, is_active=True, deleted_at__isnull=True,
     ).first() if email else None
 
+    channel = 'sms' if request.data.get('channel') == 'sms' else 'email'
     if user is not None:
-        token = create_email_verification(user)
-        try:
-            send_verification_email(user, token, request)
-        except Exception:
-            logger.exception("Échec du renvoi de l'email de vérification")
-    return Response(generic)
+        channel = _send_account_code(user, channel, request)
+    return Response({**generic, 'channel': channel})
 
 
 # ════════════════════════════════════════════════════════════════
@@ -729,3 +797,20 @@ def phone_verify_view(request):
         return Response({'detail': exc.message, 'code': exc.code}, status=exc.status)
     request.user.refresh_from_db()
     return Response({'detail': 'Numéro vérifié.', 'invitations_found': claimed, 'user': user_payload(request.user)})
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def phone_set_view(request):
+    """POST /api/auth/phone/   Body : { "phone_number": "+33…" } — enregistre le numéro (à vérifier)."""
+    from invitations.services import normalize_phone
+    from .phone import set_pending
+    e164 = normalize_phone(request.data.get('phone_number', ''))
+    if not e164:
+        return Response({'detail': 'Numéro invalide : indiquez-le avec son indicatif (ex. +33 6 12 34 56 78).',
+                         'code': 'invalid_phone'}, status=status.HTTP_400_BAD_REQUEST)
+    user = request.user
+    if not user.phone_verified_at:
+        set_pending(user, e164)
+        user.save(update_fields=['phone_number', 'updated_at'])
+    return Response({'user': user_payload(user)})

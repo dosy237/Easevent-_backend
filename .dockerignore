@@ -22,3 +22,4 @@ docker-compose.yml
 **/tests.py
 **/test_*.py
 **/tests/
+/private_media/

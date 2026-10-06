@@ -4,6 +4,11 @@
     <h2 style="color: #1B6E4B; margin-top: 0;">Bienvenue sur Easevent, {{ user.first_name|default:"!" }}</h2>
     
     <p>Nous sommes ravis de vous compter parmi nous. Pour commencer à utiliser l'application de planification d'événements la plus intuitive, il ne reste qu'une petite étape : confirmer votre adresse e-mail.</p>
+    {% if code %}
+    <p style="margin:24px 0 8px;">Saisissez ce code dans l'application :</p>
+    <p style="font-size:32px;font-weight:800;letter-spacing:8px;color:#1B6E4B;margin:0 0 8px;text-align:center;">{{ code }}</p>
+    <p style="font-size:13px;color:#777777;text-align:center;margin:0;">Ou utilisez le bouton ci-dessous.</p>
+    {% endif %}
     
     <div style="text-align: center;">
         <a href="{{ verification_url }}" class="btn" style="color: #ffffff;">Confirmer mon e-mail</a>

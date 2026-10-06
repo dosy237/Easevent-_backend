@@ -70,7 +70,7 @@ class NotificationFlowTest(TestCase):
         auth(self.client, self.guest)
         r = self.client.get('/api/notifications/', {'category': 'system'})
         self.assertEqual([n['title'] for n in r.data['results']], ['Paiement'])
-        self.assertEqual(r.data['unread'], {'events': 1, 'messages': 0, 'system': 1, 'all': 2})
+        self.assertEqual(r.data['unread'], {'events': 1, 'messages': 0, 'social': 0, 'system': 1, 'all': 2})
 
         first = r.data['results'][0]['id']
         self.assertEqual(self.client.post(f'/api/notifications/{first}/read/').data['unread']['all'], 1)

@@ -301,7 +301,10 @@ def search_users(request):
             ).exclude(status='revoked').values_list('invited_user_id', flat=True))
         except Exception:
             invited = set()
+    from social.services import status_for
+    friendship = status_for(request.user, [u.id for u in users])
     return Response({'results': [{
+        'friend_status':  friendship.get(u.id),
         'id':             str(u.id),
         'first_name':     u.first_name,
         'last_name':      u.last_name,

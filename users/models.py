@@ -377,6 +377,9 @@ class EmailVerification(models.Model):
     # n'est jamais stocké (une fuite de la base ne permet pas
     # d'activer des comptes). Voir users/tokens.py.
     token      = models.CharField(max_length=64, unique=True)
+    # Code à 6 chiffres (même email que le lien) : empreinte + essais
+    code_hash  = models.CharField(max_length=64, blank=True, default='')
+    attempts   = models.PositiveSmallIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
     expires_at = models.DateTimeField()
 

@@ -17,6 +17,7 @@ from .models import Conversation, Message
 EPOCH = datetime(2000, 1, 1, tzinfo=dt_timezone.utc)
 ONLINE_WINDOW = 30      # secondes : « En ligne » si actif dans la conversation
 TYPING_WINDOW = 6       # secondes : « en train d'écrire »
+KIND_PREVIEW = {'image': 'Photo', 'location': 'Itinéraire'}
 PREVIEW = {
     'invitation_sent': 'Invitation envoyée',
     'invitation_accepted': 'A accepté votre invitation',
@@ -97,33 +98,98 @@ def record_invitation_event(invitation, system_type):
     add_system(conv, system_type)
 
 
-def send(conv, sender, body):
+IMAGE_MAX_BYTES = 8 * 1024 * 1024
+IMAGE_MAX_SIDE = 1600
+
+
+def _after_send(conv, sender, preview, now):
+    """Dernier message, lecture de l'expéditeur, notification du destinataire (une par conversation)."""
     from notifications.models import Notification
     from notifications.services import notify
 
+    side = conv.side(sender)
+    Conversation.objects.filter(pk=conv.pk).update(
+        last_message_at=now, **{f'{side}_read_at': now, f'{side}_seen_at': now, f'{side}_typing_at': None})
+    recipient = conv.participant if side == 'organizer' else conv.organizer
+    preview = preview if len(preview) <= 120 else preview[:117] + '…'
+    existing = Notification.objects.filter(user=recipient, type='message_received', read_at__isnull=True,
+                                           data__conversation_id=str(conv.id)).first()
+    text = f'de {sender.first_name} : « {preview} »'
+    if existing:
+        existing.body, existing.created_at, existing.actor = text, now, sender
+        existing.save(update_fields=['body', 'created_at', 'actor'])
+    else:
+        notify(recipient, Notification.Type.MESSAGE_RECEIVED, 'Nouveau message', text, actor=sender,
+               event=conv.event, data={'conversation_id': str(conv.id)})
+
+
+def send(conv, sender, body):
     body = (body or '').strip()
     if not body:
         raise MessagingError('Le message est vide.', 'empty')
     if len(body) > 2000:
         raise MessagingError('Le message est limité à 2000 caractères.', 'too_long')
-    side = conv.side(sender)
     now = timezone.now()
     msg = Message.objects.create(conversation=conv, sender=sender, body=body, created_at=now)
-    Conversation.objects.filter(pk=conv.pk).update(
-        last_message_at=now, **{f'{side}_read_at': now, f'{side}_seen_at': now, f'{side}_typing_at': None})
+    _after_send(conv, sender, body, now)
+    return msg
 
-    # Une notification par conversation non lue, mise à jour à chaque message
-    recipient = conv.participant if side == 'organizer' else conv.organizer
-    preview = body if len(body) <= 120 else body[:117] + '…'
-    existing = Notification.objects.filter(user=recipient, type='message_received', read_at__isnull=True,
-                                           data__conversation_id=str(conv.id)).first()
-    if existing:
-        existing.body, existing.created_at, existing.actor = f'de {sender.first_name} : « {preview} »', now, sender
-        existing.save(update_fields=['body', 'created_at', 'actor'])
-    else:
-        notify(recipient, Notification.Type.MESSAGE_RECEIVED, 'Nouveau message',
-               f'de {sender.first_name} : « {preview} »', actor=sender, event=conv.event,
-               data={'conversation_id': str(conv.id)})
+
+def send_image(conv, sender, upload, caption=''):
+    """
+    Photo ou capture d'écran : réencodée en JPEG (1600 px max), sans
+    métadonnées (position GPS, appareil…), rangée hors du dossier public.
+    """
+    import io
+    import uuid as _uuid
+    from pathlib import Path
+    from django.conf import settings
+    from PIL import Image, ImageOps, UnidentifiedImageError
+
+    if upload is None:
+        raise MessagingError('Aucune image reçue.', 'empty')
+    if upload.size > IMAGE_MAX_BYTES:
+        raise MessagingError('Image trop lourde (8 Mo maximum).', 'too_large')
+    caption = (caption or '').strip()[:500]
+    try:
+        img = Image.open(upload)
+        img.verify()
+        upload.seek(0)
+        img = ImageOps.exif_transpose(Image.open(upload))
+    except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError):
+        raise MessagingError("Ce fichier n'est pas une image valide.", 'invalid_image')
+    img = img.convert('RGB')
+    img.thumbnail((IMAGE_MAX_SIDE, IMAGE_MAX_SIDE))
+    buf = io.BytesIO()
+    img.save(buf, 'JPEG', quality=82, optimize=True, progressive=True)     # sans EXIF
+
+    rel = f'messages/{conv.id}/{_uuid.uuid4().hex}.jpg'
+    path = Path(settings.PRIVATE_MEDIA_ROOT) / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(buf.getvalue())
+
+    now = timezone.now()
+    msg = Message.objects.create(conversation=conv, sender=sender, kind=Message.Kind.IMAGE, body=caption,
+                                 attachment=rel, meta={'width': img.width, 'height': img.height}, created_at=now)
+    _after_send(conv, sender, caption or 'Photo', now)
+    return msg
+
+
+def send_location(conv, sender):
+    """« Envoyer l'itinéraire » : le lieu de l'événement, avec carte et lien d'itinéraire."""
+    from events.geo import maps_links
+    event = conv.event
+    if event.is_online or not event.location_address:
+        raise MessagingError("Cet événement n'a pas d'adresse.", 'no_address')
+    lat = float(event.latitude) if event.latitude is not None else None
+    lng = float(event.longitude) if event.longitude is not None else None
+    now = timezone.now()
+    msg = Message.objects.create(
+        conversation=conv, sender=sender, kind=Message.Kind.LOCATION, body=event.location_address, created_at=now,
+        meta={'address': event.location_address, 'title': event.title, 'lat': lat, 'lng': lng,
+              **maps_links(event.location_address, lat, lng)},
+    )
+    _after_send(conv, sender, f'Itinéraire : {event.location_address}', now)
     return msg
 
 
@@ -151,7 +217,7 @@ def with_unread(queryset, user):
     org_unread = Count('messages', filter=Q(messages__created_at__gt=Coalesce(F('organizer_read_at'), Value(EPOCH)))
                        & ~Q(messages__sender=user))
     part_unread = Count('messages', filter=Q(messages__created_at__gt=Coalesce(F('participant_read_at'), Value(EPOCH)))
-                        & Q(messages__kind='text') & ~Q(messages__sender=user))
+                        & ~Q(messages__kind='system') & ~Q(messages__sender=user))
     return queryset.filter(as_org | Q(participant=user)).annotate(org_unread=org_unread, part_unread=part_unread)
 
 

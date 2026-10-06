@@ -10,6 +10,7 @@ from django.urls import path, include, re_path
 from django.views.static import serve as static_serve
 from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, SpectacularSwaggerView
 
+from events import geo_views
 from invitations import organizer_views as guests, public_views as invitation_pages
 
 urlpatterns = [
@@ -23,10 +24,16 @@ urlpatterns = [
     path('api/', include('tickets.urls')),
     path('api/notifications/', include('notifications.urls')),
     path('api/conversations/', include('messaging.urls')),
+    path('api/friends/', include('social.urls')),
 
     # Annuaire des membres (M12 mode Membres, M29)
     path('api/users/search/', guests.search_users,  name='users-search'),
     path('api/users/lookup/', guests.lookup_emails, name='users-lookup'),
+
+    # Adresses et cartes
+    path('api/geo/search/',            geo_views.search,     name='geo-search'),
+    path('api/geo/place/<str:place_id>/', geo_views.place,   name='geo-place'),
+    path('api/geo/static-map/',        geo_views.static_map, name='geo-static-map'),
 
     # Pages web publiques : lien d'invitation (M31) et confidentialité
     path('i/<str:token>/',     invitation_pages.invitation_page, name='invitation-page'),

@@ -197,15 +197,43 @@ def _build_email(inv, raw, request, reminder, connection):
     return msg
 
 
+# Alphabet SMS standard (GSM 03.38) : hors de cet alphabet, chaque SMS
+# compte pour deux fois plus de segments (coût doublé).
+GSM7 = set("@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !\"#¤%&'()*+,-./0123456789:;<=>?¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§¿abcdefghijklmnopqrstuvwxyzäöñüà")
+SMS_REPLACE = {'«': '"', '»': '"', '’': "'", '‘': "'", '“': '"', '”': '"', '–': '-', '—': '-', '…': '...', '\u00a0': ' ', '€': 'EUR'}
+
+
+def gsm7(text):
+    import unicodedata
+    out = []
+    for ch in text:
+        if ch in GSM7:
+            out.append(ch)
+        elif ch in SMS_REPLACE:
+            out.append(SMS_REPLACE[ch])
+        else:
+            base = unicodedata.normalize('NFD', ch)[0]
+            out.append(base if base in GSM7 else '')
+    return ''.join(out)
+
+
 def sms_body(inv, raw, request=None):
+    """
+    SMS reçu dans l'application Messages du téléphone, par exemple :
+    Lea Mbarga vous invite a "Mariage de Sarah & Karim" le mar. 17/11 a 19h51.
+    On a hate de partager ce grand jour avec toi !
+    Repondez ici : https://easevent.nitypulse.com/i/…
+    """
     event = inv.event
-    org = _single_line(inv.event.organizer.first_name) or 'Un organisateur'
-    date = timezone.localtime(event.start_date).strftime('%d/%m/%Y')
-    parts = [f"{org} vous invite à « {_single_line(event.title)[:60]} » le {date}."]
+    org = _single_line(inv.event.organizer.full_name) or 'Un organisateur'
+    start = timezone.localtime(event.start_date)
+    days = ['lun.', 'mar.', 'mer.', 'jeu.', 'ven.', 'sam.', 'dim.']
+    when = f"{days[start.weekday()]} {start:%d/%m} à {start:%H}h{start:%M}"
+    lines = [f"{org} vous invite à \"{_single_line(event.title)[:60]}\" le {when}."]
     if inv.message:
-        parts.append(_single_line(inv.message))
-    parts.append(invitation_link(raw, request))
-    return ' '.join(parts)
+        lines.append(_single_line(inv.message))
+    lines.append(f"Répondez ici : {invitation_link(raw, request)}")
+    return gsm7('\n'.join(lines))
 
 
 def deliver(pairs, request=None, reminder=False):

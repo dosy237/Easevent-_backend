@@ -88,7 +88,7 @@ class InvitationFlowTest(TestCase):
         self.assertEqual(post.call_count, 2)
         sent_to = sorted(call.kwargs['data']['To'] for call in post.call_args_list)
         self.assertEqual(sent_to, ['+33612457890', '+33698210344'])
-        self.assertIn('Sarah vous invite à « Summit Innovation AI »', post.call_args.kwargs['data']['Body'])
+        self.assertIn('Sarah Martin vous invite à "Summit Innovation AI"', post.call_args.kwargs['data']['Body'])
 
         inv = Invitation.objects.get(contact_name='Amina')
         self.assertEqual(inv.channel, 'sms')
@@ -259,7 +259,8 @@ class InvitationLinkTest(TestCase):
     def test_inscription_avec_le_lien_connecte_directement(self):
         r = self.client.post('/api/auth/register/', {
             'email': 'julien@x.fr', 'password': 'Un-mot-de-passe-solide-42', 'first_name': 'Julien',
-            'last_name': 'Morel', 'accepted_privacy': True, 'invitation_token': self.token}, format='json')
+            'last_name': 'Morel', 'accepted_privacy': True, 'invitation_token': self.token,
+            'phone_number': '+33 6 55 44 33 22'}, format='json')
         self.assertEqual(r.status_code, 201, r.data)
         self.assertIn('access', r.data)                            # email prouvé par le lien
         self.inv.refresh_from_db()
@@ -275,7 +276,8 @@ class InvitationLinkTest(TestCase):
     def test_inscription_autre_email_reste_a_verifier(self):
         r = self.client.post('/api/auth/register/', {
             'email': 'autre@x.fr', 'password': 'Un-mot-de-passe-solide-42', 'first_name': 'Jo',
-            'last_name': 'Morel', 'accepted_privacy': True, 'invitation_token': self.token}, format='json')
+            'last_name': 'Morel', 'accepted_privacy': True, 'invitation_token': self.token,
+            'phone_number': '+33 6 55 44 33 22'}, format='json')
         self.assertNotIn('access', r.data)
         self.assertTrue(r.data['requires_verification'])
 

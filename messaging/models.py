@@ -60,8 +60,10 @@ class Conversation(models.Model):
 class Message(models.Model):
 
     class Kind(models.TextChoices):
-        TEXT   = 'text',   'Message'
-        SYSTEM = 'system', 'Événement'
+        TEXT     = 'text',     'Message'
+        IMAGE    = 'image',    'Photo / capture d’écran'
+        LOCATION = 'location', 'Itinéraire'
+        SYSTEM   = 'system',   'Événement'
 
     class SystemType(models.TextChoices):
         INVITATION_SENT     = 'invitation_sent',     'Invitation envoyée'
@@ -75,6 +77,10 @@ class Message(models.Model):
     kind         = models.CharField(max_length=10, choices=Kind.choices, default=Kind.TEXT)
     system_type  = models.CharField(max_length=30, choices=SystemType.choices, blank=True, default='')
     body         = models.TextField(max_length=2000, blank=True, default='')
+    # Photo : chemin relatif dans PRIVATE_MEDIA_ROOT (jamais servi publiquement)
+    attachment   = models.CharField(max_length=255, blank=True, default='')
+    # Photo : largeur / hauteur ; itinéraire : adresse, coordonnées
+    meta         = models.JSONField(default=dict, blank=True)
     created_at   = models.DateTimeField(default=timezone.now, db_index=True)
 
     class Meta:
@@ -86,3 +92,19 @@ class Message(models.Model):
             models.UniqueConstraint(fields=['conversation', 'system_type'],
                                     condition=~models.Q(system_type=''), name='message_unique_system_event'),
         ]
+
+
+# Une photo supprimée (compte effacé, événement supprimé…) disparaît aussi du disque
+from django.db.models.signals import post_delete  # noqa: E402
+from django.dispatch import receiver  # noqa: E402
+
+
+@receiver(post_delete, sender=Message)
+def _delete_attachment(sender, instance, **kwargs):
+    if instance.attachment:
+        from pathlib import Path
+        from django.conf import settings
+        try:
+            (Path(settings.PRIVATE_MEDIA_ROOT) / instance.attachment).unlink(missing_ok=True)
+        except OSError:
+            pass

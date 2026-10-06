@@ -81,6 +81,7 @@ INSTALLED_APPS = [
     'tickets',
     'notifications',
     'messaging',
+    'social',
 ]
 
 # ─────────────────────────────────────────────────────────────
@@ -164,6 +165,8 @@ REST_FRAMEWORK = {
         'invite_token':   '30/min',
         'messages':       '30/min',
         'phone_code':     '5/hour',
+        'static_map':     '120/min',
+        'friend_requests': '50/day',
     },
 }
 
@@ -251,6 +254,9 @@ WHITENOISE_ADD_HEADERS_FUNCTION = _static_headers
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 # Django sert /media/ lui-même (photos d'événements) si nginx ne le fait pas
+# Fichiers privés (photos de la messagerie) : servis uniquement par lien signé
+PRIVATE_MEDIA_ROOT = BASE_DIR / 'private_media'
+
 SERVE_MEDIA = config('SERVE_MEDIA', default=True, cast=bool)
 
 # ─────────────────────────────────────────────────────────────
@@ -296,6 +302,10 @@ STRIPE_CONNECT_COUNTRY = config('STRIPE_CONNECT_COUNTRY', default='FR')
 PLAN_GUEST_LIMITS = {'free': 50, 'standard': 500, 'pro': None}
 INVITE_BATCH_MAX     = 100   # adresses / numéros par envoi
 INVITE_REMIND_DELAY_HOURS = 24  # une relance par invité et par jour au plus
+# ── Cartes et adresses (events/geo.py) ─────────────────────────────────
+# Facultative : sans clé, OpenStreetMap (suggestions Photon + carte) est utilisé.
+GOOGLE_MAPS_API_KEY = config('GOOGLE_MAPS_API_KEY', default='')
+
 # ── Application mobile : ouverture depuis un lien, stores ──────────────
 ANDROID_PACKAGE   = config('ANDROID_PACKAGE', default='com.eranis.easevent')
 IOS_BUNDLE_ID     = config('IOS_BUNDLE_ID', default='com.eranis.easevent')
