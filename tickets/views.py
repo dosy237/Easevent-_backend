@@ -7,6 +7,8 @@ GET  /api/tickets/<id>/                   → détail (+ QR si généré)
 POST /api/tickets/<id>/validate/          → gratuit : généré
 POST /api/tickets/<id>/checkout/          → payant : URL Stripe Checkout
 POST /api/tickets/<id>/cancel/
+POST /api/tickets/<id>/pdf-link/          → lien de téléchargement signé (5 min)
+GET  /api/tickets/pdf/<jeton>/            → PDF du ticket
 GET  /api/tickets/counts/                 → compteurs (badge de l'onglet)
 GET  /api/payments/connect/status/        → organisateur : état des paiements
 POST /api/payments/connect/onboard/       → lien d'activation Stripe
@@ -18,7 +20,8 @@ GET  /api/payments/return/                → page de retour vers l'application
 import logging
 
 from django.db.models import Count, Q
-from django.http import HttpResponse
+from django.core import signing
+from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, render
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
@@ -221,3 +224,41 @@ def payment_return(request):
     }
     title, message, deeplink = pages.get((flow, state), ('Easevent', 'Retournez dans l’application.', 'easevent://'))
     return render(request, 'tickets/return.html', {'title': title, 'message': message, 'deeplink': deeplink})
+
+
+# ─────────────────────────────────────────────────────────────
+# PDF du ticket (bouton « Télécharger » de M27)
+# Lien signé et valable 5 minutes : l'application l'ouvre dans le
+# navigateur du téléphone, qui télécharge ou affiche le PDF.
+# ─────────────────────────────────────────────────────────────
+PDF_SALT = 'easevent.ticket.pdf'
+PDF_LINK_TTL = 300
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def ticket_pdf_link(request, ticket_id):
+    ticket = _own_ticket(request, ticket_id)
+    if ticket.status != Ticket.Status.GENERATED:
+        return Response({'detail': 'Le PDF est disponible une fois le ticket généré.', 'code': 'not_generated'},
+                        status=status.HTTP_400_BAD_REQUEST)
+    token = signing.dumps({'t': str(ticket.id), 'u': str(request.user.id)}, salt=PDF_SALT, compress=True)
+    url = stripe_service._url(request, f'/api/tickets/pdf/{token}/')
+    return Response({'url': url, 'expires_in': PDF_LINK_TTL})
+
+
+def ticket_pdf(request, token):
+    from .pdf import render_ticket_pdf
+    try:
+        data = signing.loads(token, salt=PDF_SALT, max_age=PDF_LINK_TTL)
+    except signing.BadSignature:
+        raise Http404('Lien expiré')
+    ticket = Ticket.objects.select_related('event', 'user').filter(
+        pk=data.get('t'), user_id=data.get('u'), status=Ticket.Status.GENERATED).first()
+    if ticket is None:
+        raise Http404('Ticket introuvable')
+    response = HttpResponse(render_ticket_pdf(ticket), content_type='application/pdf')
+    response['Content-Disposition'] = f'attachment; filename="ticket-{ticket.number}.pdf"'
+    response['Cache-Control'] = 'no-store'
+    response['Referrer-Policy'] = 'no-referrer'
+    return response

@@ -234,3 +234,42 @@ class RealSignatureWebhookTest(TestCase):
         self.assertEqual(self._post(body, secret='whsec_pirate').status_code, 400)
         self.ticket.refresh_from_db()
         self.assertEqual(self.ticket.status, 'pending')
+
+
+class TicketPdfTest(TestCase):
+
+    def setUp(self):
+        cache.clear()
+        orga = User.objects.create_user(email='o@x.fr', password='x', first_name='Léa', last_name='O')
+        self.guest = User.objects.create_user(email='g@x.fr', password='x', first_name='Sarah', last_name='Martin')
+        start = timezone.now() + timedelta(days=5)
+        self.event = Event.objects.create(organizer=orga, title='Mariage de Sarah & Karim', event_type='mariage',
+                                          start_date=start, end_date=start + timedelta(hours=8), status='published',
+                                          visibility='public', dress_code='Tenue de soirée',
+                                          cover_image='/static/app/covers/photos/mariage-reception.jpg')
+        self.client = APIClient()
+        auth(self.client, self.guest)
+
+    def test_telechargement_pdf(self):
+        tid = self.client.post(f'/api/events/{self.event.id}/tickets/').data['id']
+        link = self.client.post(f'/api/tickets/{tid}/pdf-link/')
+        self.assertEqual(link.status_code, 200)
+        path = link.data['url'].split('://', 1)[1].split('/', 1)[1]
+        pdf = APIClient().get('/' + path)          # sans authentification : le lien signé suffit
+        self.assertEqual(pdf.status_code, 200)
+        self.assertEqual(pdf['Content-Type'], 'application/pdf')
+        self.assertTrue(pdf.content.startswith(b'%PDF'))
+        self.assertIn('ticket-EV-', pdf['Content-Disposition'])
+
+    def test_lien_falsifie_ou_ticket_en_attente(self):
+        self.assertEqual(APIClient().get('/api/tickets/pdf/faux-jeton/').status_code, 404)
+        self.event.is_paid, self.event.price = True, '10.00'
+        self.event.save()
+        tid = self.client.post(f'/api/events/{self.event.id}/tickets/').data['id']
+        self.assertEqual(self.client.post(f'/api/tickets/{tid}/pdf-link/').status_code, 400)
+
+    def test_commission_par_defaut_3_pourcent(self):
+        from django.conf import settings
+        from tickets.stripe_service import platform_fee
+        self.assertEqual(settings.PLATFORM_FEE_PERCENT, 3)
+        self.assertEqual(platform_fee(2500), 75)
