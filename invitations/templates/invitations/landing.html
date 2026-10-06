@@ -75,8 +75,18 @@
         <li><b>2</b>Accepter</li>
         <li><b>3</b>Mon ticket</li>
       </ol>
-      <a class="btn primary" id="open" href="{{ deeplink }}">Ouvrir dans l'application</a>
-      <p class="note">L'application Easevent vous guide : création de compte{% if inv.email %} avec {{ inv.email }}{% endif %}, réponse et ticket.</p>
+      {% if app_missing %}
+        <p class="note" style="font-size:14px;margin:0 0 12px;color:#fff">L'application Easevent n'est pas encore installée sur ce téléphone.</p>
+      {% endif %}
+      {% if not app_missing %}<a class="btn primary" id="open" href="{{ open_url }}">Ouvrir dans l'application</a>{% endif %}
+      {% if store_url %}
+        <a class="btn {% if app_missing %}primary{% else %}ghost{% endif %}" id="store" href="{{ store_url }}">Télécharger l'application</a>
+        <p class="note">Après l'installation, ouvrez Easevent{% if platform == 'android' %} : votre invitation s'affiche directement{% else %} et créez votre compte avec {% if inv.email %}{{ inv.email }}{% else %}ce numéro de téléphone : votre invitation vous attend{% endif %}{% endif %}.</p>
+      {% elif app_missing or platform == 'other' %}
+        <p class="note">{% if platform == 'other' %}Ouvrez ce lien sur votre téléphone pour répondre avec l'application Easevent.{% else %}L'application sera bientôt disponible sur votre store. Vous pouvez déjà décliner ci-dessous si vous ne venez pas.{% endif %}</p>
+      {% else %}
+        <p class="note">L'application Easevent vous guide : création de compte{% if inv.email %} avec {{ inv.email }}{% endif %}, réponse et ticket.</p>
+      {% endif %}
     </section>
     <form class="decline" method="post">
       {% csrf_token %}
@@ -86,5 +96,18 @@
   {% endif %}
   <p class="legal">Lien personnel et non transférable. <a href="{% url 'privacy-page' %}">Confidentialité</a></p>
 </main>
+{% if auto_open %}
+<script>
+  // Ouvre l'application directement ; sur iOS, propose le store si rien ne s'est ouvert
+  (function () {
+    var open = document.getElementById('open');
+    if (!open) return;
+    window.location.href = open.href;
+    {% if platform == 'ios' and store_url %}
+    setTimeout(function () { if (!document.hidden) window.location.href = document.getElementById('store').href; }, 1800);
+    {% endif %}
+  })();
+</script>
+{% endif %}
 </body>
 </html>

@@ -19,5 +19,7 @@ urlpatterns = [
     path('me/export/',               views.export_data_view,             name='me-export'),
     path('change-password/',         views.change_password_view,         name='change-password'),
     path('delete-account/',          views.delete_account_view,          name='delete-account'),
+    path('phone/send-code/',         views.phone_send_code_view,         name='phone-send-code'),
+    path('phone/verify/',            views.phone_verify_view,            name='phone-verify'),
     path('token/refresh/',           TokenRefreshView.as_view(),         name='token-refresh'),
 ]

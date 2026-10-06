@@ -447,9 +447,14 @@ def queue_send(invitations, reminder=False):
     if in_app:
         Invitation.objects.filter(pk__in=in_app).update(delivery_status='in_app')
     if ids:
+        from django.conf import settings
         from easevent.dispatch import dispatch
         from .tasks import send_invitations
-        dispatch(send_invitations, ids, reminder=reminder)
+        # Envoi par vagues : le serveur et le fournisseur SMS ne sont jamais saturés
+        size, gap = settings.INVITE_WAVE_SIZE, settings.INVITE_WAVE_SECONDS
+        for i in range(0, len(ids), size):
+            dispatch(send_invitations, ids[i:i + size], reminder=reminder,
+                     countdown=(i // size) * gap or None)
 
 
 def send_now(invitation_ids, reminder=False):

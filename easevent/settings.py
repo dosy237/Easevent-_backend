@@ -163,6 +163,7 @@ REST_FRAMEWORK = {
         'invite_send':    '30/hour',
         'invite_token':   '30/min',
         'messages':       '30/min',
+        'phone_code':     '5/hour',
     },
 }
 
@@ -295,6 +296,19 @@ STRIPE_CONNECT_COUNTRY = config('STRIPE_CONNECT_COUNTRY', default='FR')
 PLAN_GUEST_LIMITS = {'free': 50, 'standard': 500, 'pro': None}
 INVITE_BATCH_MAX     = 100   # adresses / numéros par envoi
 INVITE_REMIND_DELAY_HOURS = 24  # une relance par invité et par jour au plus
+# ── Application mobile : ouverture depuis un lien, stores ──────────────
+ANDROID_PACKAGE   = config('ANDROID_PACKAGE', default='com.eranis.easevent')
+IOS_BUNDLE_ID     = config('IOS_BUNDLE_ID', default='com.eranis.easevent')
+# Pages des stores (vides tant que l'app n'est pas publiée) et lien direct de l'APK
+ANDROID_STORE_URL = config('ANDROID_STORE_URL', default='')
+IOS_STORE_URL     = config('IOS_STORE_URL', default='')
+APP_DOWNLOAD_URL  = config('APP_DOWNLOAD_URL', default='')
+# Liens https ouverts directement dans l'app (Android App Links / iOS Universal Links)
+ANDROID_CERT_SHA256 = [f.strip() for f in config('ANDROID_CERT_SHA256', default='').split(',') if f.strip()]
+APPLE_TEAM_ID       = config('APPLE_TEAM_ID', default='')
+
+INVITE_WAVE_SIZE    = 20     # invitations par vague d'envoi (worker Celery)
+INVITE_WAVE_SECONDS = 15     # écart entre deux vagues
 
 # SMS via Twilio (API REST). Sans ces variables, les invitations par SMS
 # sont créées mais marquées « canal non configuré ».

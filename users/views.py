@@ -80,6 +80,11 @@ class PasswordResetThrottle(LoginThrottle):
     scope = 'password_reset'
 
 
+class PhoneCodeThrottle(LoginThrottle):
+    """Envoi de codes SMS (coût par SMS) : par adresse IP."""
+    scope = 'phone_code'
+
+
 # ─────────────────────────────────────────────────────────────────
 # Utilitaires
 # ─────────────────────────────────────────────────────────────────
@@ -189,6 +194,9 @@ def _verify_user(verification):
     user.is_verified = True
     user.save(update_fields=['is_verified', 'updated_at'])
     verification.delete()   # usage unique
+    # Invitations envoyées à cette adresse avant l'inscription
+    from .phone import claim_invitations
+    claim_invitations(user, email=user.email)
     return user
 
 
@@ -240,6 +248,11 @@ def register_view(request):
             accepted_privacy_at = timezone.now(),
             marketing_opt_in    = data.get('marketing_opt_in', False),
         )
+        if data.get('phone_number'):
+            from .phone import set_pending
+            set_pending(user, data['phone_number'])
+            user.save(update_fields=['phone_number', 'updated_at'])
+
         # Lien d'invitation (M31) : rattachement automatique. Si le lien a été
         # reçu sur cette adresse, l'email est prouvé : connexion immédiate.
         invitation_token = (data.get('invitation_token') or '').strip()
@@ -251,6 +264,8 @@ def register_view(request):
         token = None if user.is_verified else create_email_verification(user)
 
     if user.is_verified:
+        from .phone import claim_invitations
+        claim_invitations(user, email=user.email)
         tokens = get_tokens_for_user(user)
         return Response({
             'message':               'Compte créé.',
@@ -684,3 +699,33 @@ def delete_account_view(request):
 
     _blacklist_all_tokens(user)
     return Response({'detail': 'Compte supprimé avec succès.'})
+
+
+# ════════════════════════════════════════════════════════════════
+# TÉLÉPHONE DU COMPTE (invitations reçues par SMS)
+# ════════════════════════════════════════════════════════════════
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([PhoneCodeThrottle])
+def phone_send_code_view(request):
+    """POST /api/auth/phone/send-code/   Body : { "phone_number": "+33…" }"""
+    from .phone import PhoneError, send_code
+    try:
+        send_code(request.user, request.data.get('phone_number', ''))
+    except PhoneError as exc:
+        return Response({'detail': exc.message, 'code': exc.code}, status=exc.status)
+    return Response({'detail': 'Code envoyé par SMS.', 'expires_in': 600})
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([LoginThrottle])
+def phone_verify_view(request):
+    """POST /api/auth/phone/verify/   Body : { "code": "123456" }"""
+    from .phone import PhoneError, verify_code
+    try:
+        claimed = verify_code(request.user, request.data.get('code', ''))
+    except PhoneError as exc:
+        return Response({'detail': exc.message, 'code': exc.code}, status=exc.status)
+    request.user.refresh_from_db()
+    return Response({'detail': 'Numéro vérifié.', 'invitations_found': claimed, 'user': user_payload(request.user)})

@@ -31,6 +31,8 @@ urlpatterns = [
     # Pages web publiques : lien d'invitation (M31) et confidentialité
     path('i/<str:token>/',     invitation_pages.invitation_page, name='invitation-page'),
     path('confidentialite/',   invitation_pages.privacy_page,    name='privacy-page'),
+    path('.well-known/assetlinks.json', invitation_pages.assetlinks, name='assetlinks'),
+    path('.well-known/apple-app-site-association', invitation_pages.apple_app_site_association, name='aasa'),
 
     # Swagger / OpenAPI documentation
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),

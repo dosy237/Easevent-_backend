@@ -324,3 +324,118 @@ class PhoneHelpersTest(TestCase):
         self.assertEqual(mask_phone('+33612345678'), '+33 6 •• •• 56 78')
         self.assertEqual(mask_phone('+221774501290'), '+221 7 •• •• 12 90')
         self.assertEqual(mask_phone('+14155550123'), '+1 4 •• •• 01 23')
+
+
+@override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend',
+                   PUBLIC_BASE_URL='https://easevent.example.com', **TWILIO)
+class PhoneClaimAndLinksTest(TestCase):
+    """Invités par SMS : retrouver l'invitation via le numéro vérifié ; lien intelligent ; vagues."""
+
+    def setUp(self):
+        cache.clear()
+        self.client = APIClient()
+        self.orga = User.objects.create_user(email='sarah@x.fr', password='x', first_name='Sarah',
+                                             last_name='Martin', is_verified=True)
+        start = timezone.now() + timedelta(days=10)
+        self.event = Event.objects.create(organizer=self.orga, title='Mariage', event_type='mariage',
+                                          start_date=start, end_date=start + timedelta(hours=8),
+                                          status='published', visibility='private')
+        auth(self.client, self.orga)
+        with mock.patch('invitations.sms.requests.post', return_value=SmsOk()) as post:
+            self.client.post(f'/api/events/{self.event.id}/invite/', {'phone_numbers': ['+33 6 12 45 78 90']}, format='json')
+        self.sms_body = post.call_args.kwargs['data']['Body']
+        self.token = link_token(self.sms_body)
+
+    def _new_user(self, email='julien@x.fr'):
+        u = User.objects.create_user(email=email, password='x', first_name='Julien', last_name='M', is_verified=True)
+        auth(self.client, u)
+        return u
+
+    def _code(self, post):
+        return re.search(r'code de vérification est (\d{6})', post.call_args.kwargs['data']['Body']).group(1)
+
+    def test_numero_verifie_rattache_l_invitation_sms(self):
+        julien = self._new_user()
+        with mock.patch('invitations.sms.requests.post', return_value=SmsOk()) as post:
+            r = self.client.post('/api/auth/phone/send-code/', {'phone_number': '06 12 45 78 90'}, format='json')
+        self.assertEqual(r.data['code'], 'invalid_phone')                     # indicatif obligatoire
+        with mock.patch('invitations.sms.requests.post', return_value=SmsOk()) as post:
+            self.client.post('/api/auth/phone/send-code/', {'phone_number': '+33 6 12 45 78 90'}, format='json')
+        code = self._code(post)
+        self.assertEqual(self.client.post('/api/auth/phone/verify/', {'code': '000000' if code != '000000' else '111111'},
+                                          format='json').data['code'], 'wrong_code')
+        r = self.client.post('/api/auth/phone/verify/', {'code': code}, format='json')
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertEqual(r.data['invitations_found'], 1)
+        self.assertTrue(r.data['user']['phone_verified'])
+        self.assertEqual(r.data['user']['phone'], '+33 6 •• •• 78 90')
+        self.assertEqual(Invitation.objects.get().invited_user, julien)
+        from notifications.models import Notification
+        self.assertTrue(Notification.objects.filter(user=julien, type='invitation_received').exists())
+
+    def test_numero_deja_pris_et_essais_limites(self):
+        first = self._new_user('a@x.fr')
+        with mock.patch('invitations.sms.requests.post', return_value=SmsOk()) as post:
+            self.client.post('/api/auth/phone/send-code/', {'phone_number': '+33612457890'}, format='json')
+        self.client.post('/api/auth/phone/verify/', {'code': self._code(post)}, format='json')
+        self._new_user('b@x.fr')
+        with mock.patch('invitations.sms.requests.post', return_value=SmsOk()) as post:
+            self.client.post('/api/auth/phone/send-code/', {'phone_number': '+33612457890'}, format='json')
+        self.assertEqual(self.client.post('/api/auth/phone/verify/', {'code': self._code(post)}, format='json').data['code'],
+                         'phone_taken')
+        with mock.patch('invitations.sms.requests.post', return_value=SmsOk()) as post:
+            self.client.post('/api/auth/phone/send-code/', {'phone_number': '+33700000001'}, format='json')
+        for _ in range(5):
+            self.client.post('/api/auth/phone/verify/', {'code': 'abc'}, format='json')
+        r = self.client.post('/api/auth/phone/verify/', {'code': self._code(post)}, format='json')
+        self.assertEqual(r.data['code'], 'too_many_attempts')
+        self.assertEqual(Invitation.objects.get().invited_user, first)
+
+    def test_email_verifie_rattache_l_invitation(self):
+        from users.tokens import create_email_verification
+        auth(self.client, self.orga)
+        self.client.post(f'/api/events/{self.event.id}/invite/', {'emails': ['zoe@x.fr']}, format='json')
+        zoe = User.objects.create_user(email='zoe@x.fr', password='x', first_name='Zoé', last_name='Z', is_verified=False)
+        token = create_email_verification(zoe)
+        self.client.credentials()
+        self.client.post('/api/auth/verify-email/', {'token': token}, format='json')
+        self.assertEqual(Invitation.objects.get(email='zoe@x.fr').invited_user, zoe)
+
+    def test_inscription_avec_numero_en_attente(self):
+        self.client.credentials()
+        r = self.client.post('/api/auth/register/', {
+            'email': 'new@x.fr', 'password': 'Un-mot-de-passe-solide-42', 'first_name': 'Nina', 'last_name': 'B',
+            'accepted_privacy': True, 'phone_number': '+221 77 450 12 90'}, format='json')
+        self.assertEqual(r.status_code, 201, r.data)
+        self.assertEqual((r.data['user']['phone'], r.data['user']['phone_verified']), ('+221 7 •• •• 12 90', False))
+        self.assertIsNone(User.objects.get(email='new@x.fr').phone_hash)        # pas de rattachement sans code
+
+    def test_lien_android_ouvre_l_app_ou_le_store(self):
+        with self.settings(ANDROID_STORE_URL='https://play.google.com/store/apps/details?id=com.eranis.easevent'):
+            r = self.client.get(f'/i/{self.token}/', HTTP_USER_AGENT='Mozilla/5.0 (Linux; Android 14; Pixel 8)')
+        html = r.content.decode()
+        self.assertIn(f'intent://i/{self.token}#Intent;scheme=easevent;package=com.eranis.easevent', html)
+        self.assertIn('referrer=invite%3D' + self.token, html)                 # repris par l'app après installation
+        self.assertIn("Télécharger l'application", html)
+        r = self.client.get(f'/i/{self.token}/', HTTP_USER_AGENT='Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)')
+        self.assertIn(f'easevent://i/{self.token}', r.content.decode())
+
+    def test_fichiers_well_known(self):
+        self.assertEqual(self.client.get('/.well-known/assetlinks.json').status_code, 404)
+        with self.settings(ANDROID_CERT_SHA256=['AA:BB'], APPLE_TEAM_ID='TEAM123'):
+            data = self.client.get('/.well-known/assetlinks.json').json()
+            self.assertEqual(data[0]['target']['package_name'], 'com.eranis.easevent')
+            aasa = self.client.get('/.well-known/apple-app-site-association').json()
+            self.assertEqual(aasa['applinks']['details'][0]['appID'], 'TEAM123.com.eranis.easevent')
+
+    def test_envoi_par_vagues(self):
+        auth(self.client, self.orga)
+        phones = [f'+3361245{n:04d}' for n in range(45)]
+        with self.settings(CELERY_TASK_ALWAYS_EAGER=False), \
+                mock.patch('invitations.tasks.send_invitations.apply_async') as queued, \
+                self.captureOnCommitCallbacks(execute=True):
+            self.client.post(f'/api/events/{self.event.id}/invite/', {'phone_numbers': phones}, format='json')
+        countdowns = [c.kwargs['countdown'] for c in queued.call_args_list]
+        sizes = [len(c.kwargs['args'][0]) for c in queued.call_args_list]
+        self.assertEqual(sizes, [20, 20, 5])
+        self.assertEqual(countdowns, [None, 15, 30])
