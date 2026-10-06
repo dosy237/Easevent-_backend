@@ -18,6 +18,7 @@ Paiements Stripe — option A : Stripe Connect.
 Les clés sont lues dans les variables d'environnement du serveur.
 ═══════════════════════════════════════════════════════════════
 """
+import json
 import logging
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -72,7 +73,7 @@ def sync_account(user, account=None):
         return user
     if account is None:
         _configure()
-        account = stripe.Account.retrieve(user.stripe_account_id)
+        account = _plain(stripe.Account.retrieve(user.stripe_account_id))
     user.stripe_charges_enabled = bool(account.get('charges_enabled'))
     user.stripe_payouts_enabled = bool(account.get('payouts_enabled'))
     user.save(update_fields=['stripe_charges_enabled', 'stripe_payouts_enabled', 'updated_at'])
@@ -167,11 +168,21 @@ def create_checkout(ticket, request):
 # ─────────────────────────────────────────────────────────────
 # Webhooks
 # ─────────────────────────────────────────────────────────────
+def _plain(obj):
+    """Objet Stripe → dict Python (les objets Stripe ne sont plus des dict depuis la v15)."""
+    return obj.to_dict() if hasattr(obj, 'to_dict') else obj
+
+
 def parse_webhook(payload, signature):
-    """Vérifie la signature Stripe (rejette toute requête falsifiée)."""
+    """
+    Vérifie la signature Stripe (rejette toute requête falsifiée), puis
+    renvoie l'événement sous forme de dict.
+    """
     if not settings.STRIPE_WEBHOOK_SECRET:
         raise PaymentsUnavailable()
-    return stripe.Webhook.construct_event(payload, signature, settings.STRIPE_WEBHOOK_SECRET)
+    stripe.Webhook.construct_event(payload, signature, settings.STRIPE_WEBHOOK_SECRET)
+    raw = payload.decode('utf-8') if isinstance(payload, bytes) else payload
+    return json.loads(raw)
 
 
 def _ticket_from_session(session):

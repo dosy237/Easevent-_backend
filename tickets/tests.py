@@ -198,3 +198,39 @@ class TicketFlowTest(TestCase):
     def test_sans_cle_stripe(self):
         r = self.client.post('/api/payments/connect/onboard/')
         self.assertEqual(r.status_code, 503)
+
+
+@override_settings(STRIPE_SECRET_KEY='sk_test_dummy', STRIPE_WEBHOOK_SECRET='whsec_vrai_test')
+class RealSignatureWebhookTest(TestCase):
+    """Webhook signé comme le fait Stripe, SANS simulation de la librairie."""
+
+    def setUp(self):
+        orga = User.objects.create_user(email='o@x.fr', password='x', first_name='O', last_name='R',
+                                        stripe_account_id='acct_9', stripe_charges_enabled=True)
+        self.guest = User.objects.create_user(email='g@x.fr', password='x', first_name='G', last_name='S')
+        start = timezone.now() + timedelta(days=5)
+        event = Event.objects.create(organizer=orga, title='Gala', event_type='gala', start_date=start,
+                                     end_date=start + timedelta(hours=4), status='published', visibility='public',
+                                     is_paid=True, price='40.00')
+        self.ticket = Ticket.objects.create(event=event, user=self.guest, price='40.00', payment_status='pending')
+
+    def _post(self, body, secret='whsec_vrai_test'):
+        import hashlib, hmac, time
+        t = int(time.time())
+        sig = hmac.new(secret.encode(), f'{t}.{body}'.encode(), hashlib.sha256).hexdigest()
+        return APIClient().post('/api/stripe/webhook/', data=body, content_type='application/json',
+                                HTTP_STRIPE_SIGNATURE=f't={t},v1={sig}')
+
+    def test_paiement_confirme_genere_le_ticket(self):
+        body = json.dumps({'id': 'evt_1', 'object': 'event', 'type': 'checkout.session.completed',
+                           'data': {'object': {'id': 'cs_1', 'object': 'checkout.session', 'payment_status': 'paid',
+                                               'payment_intent': 'pi_1', 'metadata': {'ticket_id': str(self.ticket.id)}}}})
+        self.assertEqual(self._post(body).status_code, 200)
+        self.ticket.refresh_from_db()
+        self.assertEqual((self.ticket.status, self.ticket.payment_status), ('generated', 'paid'))
+
+    def test_mauvaise_signature_refusee(self):
+        body = json.dumps({'type': 'checkout.session.completed', 'data': {'object': {}}})
+        self.assertEqual(self._post(body, secret='whsec_pirate').status_code, 400)
+        self.ticket.refresh_from_db()
+        self.assertEqual(self.ticket.status, 'pending')
