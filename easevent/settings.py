@@ -246,7 +246,7 @@ USE_TZ = True
 # ─────────────────────────────────────────────────────────────
 EMAIL_BACKEND = config('EMAIL_BACKEND', default='sendgrid_backend.SendgridBackend')
 SENDGRID_API_KEY = config('SENDGRID_API_KEY')
-DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='Easevent <eranistechnology@gmail.com>')
+DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='dosyca35@gmail.com')
 SENDGRID_SANDBOX_MODE_IN_DEBUG = False
 
 cloudinary.config(
