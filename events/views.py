@@ -40,6 +40,7 @@ from django.utils            import timezone
 from django.utils.text       import slugify
 from django.utils.dateparse  import parse_datetime
 from django.core.mail        import send_mail
+from django.conf             import settings
 
 # ─────────────────────────────────────────────────────────────────
 # IMPORTS DJANGO REST FRAMEWORK
@@ -721,7 +722,7 @@ L'équipe Easevent
             send_mail(
                 subject        = subject,
                 message        = message,
-                from_email     = 'dosyca35@gmail.com',
+                from_email     = settings.DEFAULT_FROM_EMAIL,
                 recipient_list = [email],
                 fail_silently  = True,  # Ne pas planter si l'email échoue
             )
