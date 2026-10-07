@@ -28,3 +28,9 @@ def pass_word(event):
     if event.visibility == 'private' or event.event_type in CELEBRATIONS:
         return INVITATION
     return BILLET
+
+
+def de(name):
+    """« de Paul », « d’Aïcha » : élision devant une voyelle ou un h."""
+    name = (name or '').strip()
+    return f'd’{name}' if name[:1].lower() in 'aeiouyhàâäéèêëîïôöùûüœæ' else f'de {name}'

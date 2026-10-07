@@ -13,6 +13,8 @@ from django.db.models import Q
 from django.http import Http404
 from django.utils.dateparse import parse_datetime
 from rest_framework import status
+
+from events.wording import pass_word
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -236,6 +238,7 @@ def detail(request, conversation_id):
         'start_date': e.start_date.isoformat(),
         'location_address': '' if e.is_online else (e.location_address or ''),
         'is_online': e.is_online,
+        'pass_word': pass_word(e),        # « Invitation générée » ou « Billet généré »
     })
     data['guest_status'] = _guest_status(conv)
     data['can_write'] = services.may_write(conv, request.user)

@@ -227,9 +227,10 @@ def _post(conv, body):
 
 def _notify_organizer(question):
     from notifications.models import Notification
+    from events.wording import de
     from notifications.services import notify
     who = question.conversation.participant
-    notify(question.event.organizer, Notification.Type.QUESTION_TO_ANSWER, f'Question de {who.first_name}',
+    notify(question.event.organizer, Notification.Type.QUESTION_TO_ANSWER, f'Question {de(who.first_name)}',
            f'« {question.question[:110]} » — {question.event.title}', actor=who, event=question.event,
            data={'conversation_id': str(question.conversation_id)}, dedupe_key=f'question:{question.id}')
 

@@ -165,7 +165,8 @@ def _after_send(conv, sender, preview, now):
     preview = preview if len(preview) <= 120 else preview[:117] + '…'
     existing = Notification.objects.filter(user=recipient, type='message_received', read_at__isnull=True,
                                            data__conversation_id=str(conv.id)).first()
-    text = f'de {sender.first_name} : « {preview} »'
+    from events.wording import de
+    text = f'{de(sender.first_name)} : « {preview} »'
     if existing:
         existing.body, existing.created_at, existing.actor = text, now, sender
         existing.save(update_fields=['body', 'created_at', 'actor'])
