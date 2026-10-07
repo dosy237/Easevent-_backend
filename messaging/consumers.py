@@ -6,7 +6,7 @@ Protocole (JSON) :
   serveur → {"type": "ready"}
   client → {"type": "typing", "conversation_id": "<uuid>"}
   client → {"type": "ping"}  → {"type": "pong"}
-  serveur → message | typing | read | badge  (voir messaging/realtime.py)
+  serveur → message | typing | read | badge | likes  (voir messaging/realtime.py)
 Le jeton n'est jamais placé dans l'URL (journaux des proxys).
 """
 import asyncio
@@ -15,7 +15,7 @@ import uuid
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 
-from .realtime import group_name
+from .realtime import PUBLIC_GROUP, group_name
 
 AUTH_TIMEOUT = 10
 
@@ -64,6 +64,7 @@ class UserConsumer(AsyncJsonWebsocketConsumer):
             self._timeout.cancel()
         if self.user is not None:
             await self.channel_layer.group_discard(group_name(self.user.id), self.channel_name)
+            await self.channel_layer.group_discard(PUBLIC_GROUP, self.channel_name)
 
     async def receive_json(self, content, **kwargs):
         if not isinstance(content, dict):
@@ -77,6 +78,8 @@ class UserConsumer(AsyncJsonWebsocketConsumer):
             self.user = user
             self._timeout.cancel()
             await self.channel_layer.group_add(group_name(user.id), self.channel_name)
+            # Fil public : compteurs de « J'aime » mis à jour en direct chez tout le monde
+            await self.channel_layer.group_add(PUBLIC_GROUP, self.channel_name)
             await self.send_json({'type': 'ready'})
         elif kind == 'typing':
             await _typing(self.user, content.get('conversation_id'))

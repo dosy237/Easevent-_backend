@@ -13,6 +13,8 @@ from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, Spec
 from events import geo_views
 from invitations import organizer_views as guests, public_views as invitation_pages
 
+from events import engagement as event_engagement
+
 urlpatterns = [
     # Interface d'administration Django
     path('admin/', admin.site.urls), 
@@ -38,6 +40,7 @@ urlpatterns = [
 
     # Pages web publiques : lien d'invitation (M31) et confidentialité
     path('i/<str:token>/',     invitation_pages.invitation_page, name='invitation-page'),
+    path('e/<uuid:event_id>/', event_engagement.share_page,      name='event-share-page'),
     path('confidentialite/',   invitation_pages.privacy_page,    name='privacy-page'),
     path('.well-known/assetlinks.json', invitation_pages.assetlinks, name='assetlinks'),
     path('.well-known/apple-app-site-association', invitation_pages.apple_app_site_association, name='aasa'),

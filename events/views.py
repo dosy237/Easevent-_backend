@@ -87,11 +87,15 @@ def liste_evenements_publics(request):
     Retourne la liste des événements publiés et non supprimés.
     Filtres possibles : type, date, recherche par titre.
     """
+    from django.db.models import Count, Exists, OuterRef
+    from .models import EventLike
     evenements = Event.objects.select_related('organizer').filter(
         status             = 'published',
         visibility         = 'public',
         deleted_at__isnull = True
-    ).order_by('-start_date')
+    ).annotate(likes_n=Count('likes', distinct=True)).order_by('-start_date')
+    if request.user.is_authenticated:
+        evenements = evenements.annotate(liked_by_me=Exists(EventLike.objects.filter(event=OuterRef('pk'), user=request.user)))
 
     # Filtre par type
     event_type = request.query_params.get('type')

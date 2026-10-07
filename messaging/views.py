@@ -1,7 +1,7 @@
 """
 messaging/views.py — API de M15 / M16
   GET  /api/conversations/?event=&q=            mes conversations (organisateur ou invité)
-  POST /api/conversations/  { event_id, participant_id? }   crée ou retrouve
+  POST /api/conversations/  { event_id, participant_id? } | { friend_id }   crée ou retrouve
   GET  /api/conversations/unread-count/
   GET  /api/conversations/<id>/                 en-tête (interlocuteur, événement, statut)
   GET  /api/conversations/<id>/messages/?after=&before=     messages (+ marque lu)
@@ -56,7 +56,7 @@ def _initials(user):
 def _own(request, conversation_id):
     conv = (Conversation.objects.select_related('event', 'organizer', 'participant')
             .filter(pk=conversation_id).filter(Q(organizer=request.user) | Q(participant=request.user)).first())
-    if conv is None or conv.event.deleted_at is not None:
+    if conv is None or (conv.event_id and conv.event.deleted_at is not None):
         raise Http404
     return conv
 
@@ -87,11 +87,14 @@ def _summary(conv, user, request):
         'id':     str(conv.id),
         'role':   side,
         'other':  _person(other),
+        'direct': conv.is_direct,
         'event':  {'id': str(conv.event.id), 'title': conv.event.title,
-                   'cover_image': public_url(conv.event.cover_image, request) if conv.event.cover_image else None},
+                   'cover_image': public_url(conv.event.cover_image, request) if conv.event.cover_image else None}
+                  if conv.event_id else None,
         'last_message': {
             'text':       (services.PREVIEW.get(last.system_type, '') if last.kind == 'system'
                            else (last.body[:140] or services.KIND_PREVIEW.get(last.kind, '')) if last.kind == 'text'
+                           else (last.body[:140] or f"Événement partagé : {last.meta.get('title', '')}") if last.kind == 'event'
                            else services.KIND_PREVIEW.get(last.kind, '')),
             'kind':       last.kind,
             'is_system':  last.kind == 'system',
@@ -124,6 +127,8 @@ def _message(msg, user, other_read_at, request=None):
         token = signing.dumps(str(msg.id), salt=ATTACHMENT_SALT)
         data['image'] = {'url': absolute_url(f'/api/conversations/attachments/{token}/', request),
                          'width': msg.meta.get('width'), 'height': msg.meta.get('height')}
+    elif msg.kind == 'event':
+        data['event'] = msg.meta
     elif msg.kind == 'location':
         from events.geo import static_map_url
         data['location'] = {**msg.meta, 'map_image': static_map_url(msg.meta.get('lat'), msg.meta.get('lng'), request)}
@@ -152,7 +157,8 @@ def conversations(request):
     # Événements proposés en filtres (ceux qui ont des conversations)
     events = {}
     for c in items:
-        events.setdefault(c['event']['id'], c['event']['title'])
+        if c['event']:
+            events.setdefault(c['event']['id'], c['event']['title'])
     return Response({
         'results': items,
         'unread_conversations': sum(1 for c in items if c['unread']),
@@ -163,6 +169,18 @@ def conversations(request):
 def _open(request):
     from users.models import User
     data = request.data if isinstance(request.data, dict) else {}
+    # Conversation directe avec un ami : { friend_id }
+    if data.get('friend_id'):
+        friend = User.objects.filter(pk=_uuid(data.get('friend_id')), is_active=True).first() if _uuid(data.get('friend_id')) else None
+        if friend is None:
+            raise Http404
+        try:
+            conv = services.get_or_create_direct(request.user, friend)
+        except services.MessagingError as exc:
+            return Response({'detail': exc.message, 'code': exc.code}, status=exc.status)
+        conv = services.with_unread(Conversation.objects.select_related('event', 'organizer', 'participant')
+                                    .filter(pk=conv.pk), request.user).get()
+        return Response(_summary(conv, request.user, request), status=status.HTTP_201_CREATED)
     event_id = _uuid(data.get('event_id'))
     event = Event.objects.select_related('organizer').filter(pk=event_id, deleted_at__isnull=True).first() if event_id else None
     if event is None:
@@ -207,6 +225,10 @@ def detail(request, conversation_id):
     conv = services.with_unread(Conversation.objects.select_related('event', 'organizer', 'participant')
                                 .filter(pk=conv.pk), request.user).get()
     data = _summary(conv, request.user, request)
+    if conv.is_direct:
+        data['guest_status'] = None
+        data['can_write'] = services.may_write(conv, request.user)
+        return Response(data)
     e = conv.event
     data['event'].update({
         'start_date': e.start_date.isoformat(),
@@ -214,6 +236,7 @@ def detail(request, conversation_id):
         'is_online': e.is_online,
     })
     data['guest_status'] = _guest_status(conv)
+    data['can_write'] = services.may_write(conv, request.user)
     return Response(data)
 
 
@@ -226,8 +249,10 @@ def messages(request, conversation_id):
         if MessageThrottle().allow_request(request, None) is False:
             return Response({'detail': 'Trop de messages en peu de temps. Patientez un instant.'},
                             status=status.HTTP_429_TOO_MANY_REQUESTS)
-        if side == 'participant' and not services.may_converse(conv.event, request.user):
-            return Response({'detail': "Vous n'avez plus accès à cet événement."}, status=status.HTTP_403_FORBIDDEN)
+        if not services.may_write(conv, request.user):
+            detail = ("Vous n'êtes plus amis : cette conversation est en lecture seule." if conv.is_direct
+                      else "Vous n'avez plus accès à cet événement.")
+            return Response({'detail': detail}, status=status.HTTP_403_FORBIDDEN)
         try:
             if request.FILES.get('image'):
                 msg = services.send_image(conv, request.user, request.FILES['image'], request.data.get('body', ''))
@@ -283,7 +308,7 @@ def attachment(request, token):
             pk=signing.loads(token, salt=ATTACHMENT_SALT, max_age=ATTACHMENT_TTL), kind='image')
     except (signing.BadSignature, Message.DoesNotExist, ValueError):
         raise Http404
-    if msg.conversation.event.deleted_at is not None:
+    if msg.conversation.event_id and msg.conversation.event.deleted_at is not None:
         raise Http404
     path = Path(settings.PRIVATE_MEDIA_ROOT) / msg.attachment
     if not path.is_file():

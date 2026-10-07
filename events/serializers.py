@@ -45,6 +45,9 @@ class EventPublicSerializer(serializers.ModelSerializer):
     gallery            = serializers.SerializerMethodField()
 
     has_minisite = serializers.SerializerMethodField()
+    likes_count = serializers.SerializerMethodField()
+    liked = serializers.SerializerMethodField()
+    share_url = serializers.SerializerMethodField()
 
     class Meta:
         # model : quel modèle Django ce serializer traduit
@@ -92,7 +95,28 @@ class EventPublicSerializer(serializers.ModelSerializer):
             'map',                 # carte du lieu + liens Google Maps (voir, itinéraire)
             'gallery',             # photos de la galerie (URL absolues)
             'has_minisite',        # un mini-site a été choisi (affiché dans l'application)
+            'likes_count',         # nombre de « J'aime »
+            'liked',               # l'utilisateur connecté a aimé
+            'share_url',           # lien de partage avec aperçu (événements publics publiés)
         ]
+
+    def get_likes_count(self, obj):
+        n = getattr(obj, 'likes_n', None)                 # annoté dans les listes (une seule requête)
+        return n if n is not None else obj.likes.count()
+
+    def get_liked(self, obj):
+        flag = getattr(obj, 'liked_by_me', None)
+        if flag is not None:
+            return bool(flag)
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        return bool(user and user.is_authenticated and obj.likes.filter(user=user).exists())
+
+    def get_share_url(self, obj):
+        if obj.status != 'published' or obj.visibility != 'public' or obj.deleted_at is not None:
+            return None
+        from easevent.media import absolute_url
+        return absolute_url(f'/e/{obj.id}/', self.context.get('request'))
 
     def get_has_minisite(self, obj):
         return bool((obj.minisite_config or {}).get('spec'))

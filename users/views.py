@@ -698,7 +698,7 @@ def export_data_view(request):
             } for inv in invitations
         ],
         'messages_sent': [
-            {'event': m.conversation.event.title, 'text': m.body, 'created_at': m.created_at.isoformat()}
+            {'event': m.conversation.event.title if m.conversation.event_id else None, 'text': m.body, 'created_at': m.created_at.isoformat()}
             for m in __import__('messaging.models', fromlist=['Message']).Message.objects
             .filter(sender=user, kind='text').select_related('conversation__event').order_by('-created_at')[:500]
         ],

@@ -20,7 +20,9 @@ from django.utils import timezone
 
 class Conversation(models.Model):
     id          = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    event       = models.ForeignKey('events.Event', on_delete=models.CASCADE, related_name='conversations')
+    # Conversation d'événement (organisateur ↔ invité) ou directe entre amis (event vide)
+    event       = models.ForeignKey('events.Event', on_delete=models.CASCADE, related_name='conversations',
+                                    null=True, blank=True)
     organizer   = models.ForeignKey('users.User', on_delete=models.CASCADE, related_name='organized_conversations')
     participant = models.ForeignKey('users.User', on_delete=models.CASCADE, related_name='conversations')
 
@@ -40,7 +42,14 @@ class Conversation(models.Model):
         ordering = ['-last_message_at']
         constraints = [
             models.UniqueConstraint(fields=['event', 'participant'], name='conversation_unique_event_participant'),
+            # Une seule conversation directe par paire d'amis (organizer = identifiant le plus petit)
+            models.UniqueConstraint(fields=['organizer', 'participant'], condition=models.Q(event__isnull=True),
+                                    name='conversation_unique_direct'),
         ]
+
+    @property
+    def is_direct(self):
+        return self.event_id is None
 
     def __str__(self):
         return f'{self.event_id} · {self.participant_id}'
@@ -63,6 +72,7 @@ class Message(models.Model):
         TEXT     = 'text',     'Message'
         IMAGE    = 'image',    'Photo / capture d’écran'
         LOCATION = 'location', 'Itinéraire'
+        EVENT    = 'event',    'Événement partagé'
         SYSTEM   = 'system',   'Événement'
 
     class SystemType(models.TextChoices):

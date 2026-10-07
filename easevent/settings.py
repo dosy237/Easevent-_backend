@@ -183,7 +183,9 @@ REST_FRAMEWORK = {
         'rsvp':            '120/hour',     # questions RSVP (organisateur) et réponses
         'billing':         '30/hour',      # abonnements : sessions Stripe
         'checkin':         '120/min',      # scanner de tickets à l'entrée
-        'minisite':        '20/hour',      # générations de mini-site (appels aux modèles d'IA)
+        'minisite':        '20/hour',
+        'likes':           '120/min',      # « J'aime » (aimer / retirer)
+        'share':           '30/hour',      # partages d'événements à des amis      # générations de mini-site (appels aux modèles d'IA)
     },
 }
 

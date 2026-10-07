@@ -4,6 +4,7 @@ from invitations import organizer_views as guests
 from rsvp import views as rsvp
 
 from minisite import views as minisite_views
+from . import engagement
 
 urlpatterns = [
     # ── Événements publics (visiteurs) ────────────────────────
@@ -12,6 +13,8 @@ urlpatterns = [
 
     # ── Mes événements (organisateur) ─────────────────────────
     path('mes-evenements/',                 views.mes_evenements,                  name='mes-evenements'),
+    path('<uuid:event_id>/like/',           engagement.like,                       name='event-like'),
+    path('<uuid:event_id>/share/',          engagement.share,                      name='event-share'),
     path('quota/',                          views.quota_evenements,                name='events-quota'),
     path('create/',                         views.creer_evenement,                 name='creer-evenement'),
     path('upload-image/',                   views.upload_image,                    name='upload-image'),

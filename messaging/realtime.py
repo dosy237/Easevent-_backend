@@ -7,6 +7,8 @@ envoie, après validation de la transaction :
   typing   : l'interlocuteur écrit
   read     : l'interlocuteur a lu jusqu'à <read_at>
   badge    : les compteurs (notifications, messages, tickets) ont changé
+Groupe « public » (tous les connectés) :
+  likes    : nouveau total de « J'aime » d'un événement public (regroupé, 1 par seconde au plus)
 Si Redis ou le service WebSocket est absent, rien ne casse : l'application
 retombe sur l'interrogation périodique.
 ═══════════════════════════════════════════════════════════════
@@ -16,6 +18,21 @@ import logging
 from django.db import transaction
 
 logger = logging.getLogger(__name__)
+
+
+PUBLIC_GROUP = 'public'
+
+
+def broadcast_public(payload):
+    """À tous les utilisateurs connectés (fil public)."""
+    try:
+        from asgiref.sync import async_to_sync
+        from channels.layers import get_channel_layer
+        layer = get_channel_layer()
+        if layer is not None:
+            async_to_sync(layer.group_send)(PUBLIC_GROUP, {'type': 'push.event', 'payload': payload})
+    except Exception as exc:
+        logger.info('Diffusion publique impossible (%s)', type(exc).__name__)
 
 
 def group_name(user_id):

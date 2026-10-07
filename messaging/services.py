@@ -1,9 +1,10 @@
 """
 messaging/services.py — règles de la messagerie (parcours H)
 
-Qui peut échanger : l'organisateur d'un événement et une personne qui y
-est invitée (invitation non révoquée), qui a un ticket, ou qui contacte
-l'organisateur d'un événement public publié (M24 « Contacter »).
+Deux sortes de conversations :
+- d'événement : l'organisateur et une personne invitée (invitation non révoquée),
+  qui a un ticket, ou qui contacte l'organisateur d'un événement public (M24) ;
+- directe : deux amis (amitié acceptée), par exemple pour partager un événement.
 """
 from datetime import datetime, timezone as dt_timezone
 
@@ -17,7 +18,7 @@ from .models import Conversation, Message
 EPOCH = datetime(2000, 1, 1, tzinfo=dt_timezone.utc)
 ONLINE_WINDOW = 30      # secondes : « En ligne » si actif dans la conversation
 TYPING_WINDOW = 6       # secondes : « en train d'écrire »
-KIND_PREVIEW = {'image': 'Photo', 'location': 'Itinéraire'}
+KIND_PREVIEW = {'image': 'Photo', 'location': 'Itinéraire', 'event': 'Événement partagé'}
 PREVIEW = {
     'invitation_sent': 'Invitation envoyée',
     'invitation_accepted': 'A accepté votre invitation',
@@ -44,6 +45,36 @@ def may_converse(event, participant):
     return event.status == 'published' and event.visibility == 'public'
 
 
+def are_friends(a, b):
+    from social.models import Friendship
+    return Friendship.objects.filter(
+        Q(requester=a, addressee=b) | Q(requester=b, addressee=a), status='accepted').exists()
+
+
+def may_write(conv, user):
+    """Peut encore écrire dans cette conversation (amitié retirée, accès à l'événement perdu…)."""
+    if conv.is_direct:
+        other = conv.participant if user.id == conv.organizer_id else conv.organizer
+        return other.is_active and are_friends(user, other)
+    if user.id == conv.organizer_id:
+        return True
+    return may_converse(conv.event, user)
+
+
+def get_or_create_direct(user, friend):
+    """Conversation directe entre deux amis (une seule par paire)."""
+    if user.id == friend.id or not friend.is_active or not are_friends(user, friend):
+        raise MessagingError('Vous ne pouvez écrire qu’à vos amis.', 'not_friends', 403)
+    a, b = sorted((user, friend), key=lambda u: str(u.id))
+    try:
+        with transaction.atomic():
+            conv, _ = Conversation.objects.get_or_create(
+                event=None, organizer=a, participant=b, defaults={'last_message_at': timezone.now()})
+    except IntegrityError:
+        conv = Conversation.objects.get(event__isnull=True, organizer=a, participant=b)
+    return conv
+
+
 def _bump(conv, at):
     Conversation.objects.filter(pk=conv.pk, last_message_at__lt=at).update(last_message_at=at)
 
@@ -61,6 +92,8 @@ def add_system(conv, system_type, at=None):
 
 def _backfill(conv):
     """À la création : rappelle l'historique de l'invitation dans le fil."""
+    if conv.is_direct:
+        return
     inv = conv.event.invitations.filter(invited_user=conv.participant).exclude(status='revoked').first()
     if inv is None:
         return
@@ -121,12 +154,13 @@ def _after_send(conv, sender, preview, now):
     else:
         # notify() pousse déjà la première notification de la conversation
         notify(recipient, Notification.Type.MESSAGE_RECEIVED, 'Nouveau message', text, actor=sender,
-               event=conv.event, data={'conversation_id': str(conv.id)})
+               event=conv.event if conv.event_id else None, data={'conversation_id': str(conv.id)})
     if existing:
         # Chaque nouveau message sonne sur le téléphone, comme une messagerie classique
         from notifications.push import push_to_user
         push_to_user(recipient, 'message_received', sender.full_name or 'Nouveau message', preview,
-                     data={'conversation_id': str(conv.id), 'event_id': str(conv.event_id)}, thread=f'conv:{conv.id}')
+                     data={'conversation_id': str(conv.id), **({'event_id': str(conv.event_id)} if conv.event_id else {})},
+                     thread=f'conv:{conv.id}')
 
 
 
@@ -194,7 +228,7 @@ def send_location(conv, sender):
     """« Envoyer l'itinéraire » : le lieu de l'événement, avec carte et lien d'itinéraire."""
     from events.geo import maps_links
     event = conv.event
-    if event.is_online or not event.location_address:
+    if event is None or event.is_online or not event.location_address:
         raise MessagingError("Cet événement n'a pas d'adresse.", 'no_address')
     lat = float(event.latitude) if event.latitude is not None else None
     lng = float(event.longitude) if event.longitude is not None else None
@@ -205,6 +239,30 @@ def send_location(conv, sender):
               **maps_links(event.location_address, lat, lng)},
     )
     _after_send(conv, sender, f'Itinéraire : {event.location_address}', now)
+    _broadcast(conv, msg)
+    return msg
+
+
+def event_card(event, request=None):
+    """Aperçu d'un événement public partagé dans une conversation (titre, photo, date, lieu)."""
+    from easevent.media import public_url
+    cover = event.cover_image or (event.template_config or {}).get('cover_image')
+    return {
+        'event_id': str(event.id), 'title': event.title, 'type': event.get_event_type_display(),
+        'cover_image': public_url(cover, request) if cover else None,
+        'start_date': event.start_date.isoformat() if event.start_date else None,
+        'location': 'En ligne' if event.is_online and not event.location_address else (event.location_address or ''),
+        'is_paid': bool(event.is_paid),
+    }
+
+
+def send_event(conv, sender, event, comment='', request=None):
+    """Partage d'un événement public : une carte cliquable dans la conversation, avec un mot facultatif."""
+    comment = (comment or '').strip()[:500]
+    now = timezone.now()
+    msg = Message.objects.create(conversation=conv, sender=sender, kind=Message.Kind.EVENT, body=comment,
+                                 meta=event_card(event, request), created_at=now)
+    _after_send(conv, sender, comment or f'a partagé « {event.title} »', now)
     _broadcast(conv, msg)
     return msg
 

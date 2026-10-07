@@ -12,6 +12,7 @@ Contient 4 tables :
 
 import uuid
 from django.db import models
+from django.conf import settings
 
 
 # ─────────────────────────────────────────────────────────────
@@ -396,3 +397,15 @@ class EventCollaborator(models.Model):
 
     def __str__(self):
         return f"{self.user.full_name} collabore sur '{self.event.title}'"
+
+
+
+class EventLike(models.Model):
+    """« J'aime » sur un événement public (un par personne)."""
+    event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name='likes')
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='event_likes')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['event', 'user'], name='event_like_unique')]
+        indexes = [models.Index(fields=['event'])]
