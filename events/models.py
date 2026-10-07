@@ -142,6 +142,11 @@ class Event(models.Model):
     ambiance = models.CharField(max_length=15, choices=Ambiance.choices, blank=True, default='')
     # Ambiance libre quand l'organisateur choisit « Autre » (ex. « Bohème »)
     ambiance_label = models.CharField(max_length=40, blank=True, default='', verbose_name="Ambiance personnalisée")
+    # Vidéo de présentation (événements publics) : 45 s au plus, hébergée sur Cloudinary
+    video_public_id = models.CharField(max_length=200, blank=True, default='')
+    video = models.JSONField(null=True, blank=True, verbose_name="Vidéo")   # url, poster, durée, dimensions, légende
+    # Événement en ligne : lien visible par tous, ou seulement dans le billet / l'invitation des participants
+    online_link_public = models.BooleanField(default=False, verbose_name="Lien en ligne visible par tous")
     # Thème de l'événement (« Bohème champêtre », « IA & climat ») : fil conducteur du mini-site
     theme = models.CharField(max_length=80, blank=True, default='', verbose_name="Thème")
 

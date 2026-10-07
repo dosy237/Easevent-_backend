@@ -185,7 +185,8 @@ REST_FRAMEWORK = {
         'checkin':         '120/min',      # scanner de tickets à l'entrée
         'minisite':        '20/hour',
         'likes':           '120/min',      # « J'aime » (aimer / retirer)
-        'share':           '30/hour',      # partages d'événements à des amis      # générations de mini-site (appels aux modèles d'IA)
+        'share':           '30/hour',
+        'video':           '20/hour',      # signatures d'envoi de vidéo (Cloudinary)      # partages d'événements à des amis      # générations de mini-site (appels aux modèles d'IA)
     },
 }
 

@@ -5,6 +5,7 @@ from rsvp import views as rsvp
 
 from minisite import views as minisite_views
 from . import engagement
+from . import video as event_video
 
 urlpatterns = [
     # ── Événements publics (visiteurs) ────────────────────────
@@ -15,6 +16,7 @@ urlpatterns = [
     path('mes-evenements/',                 views.mes_evenements,                  name='mes-evenements'),
     path('<uuid:event_id>/like/',           engagement.like,                       name='event-like'),
     path('<uuid:event_id>/share/',          engagement.share,                      name='event-share'),
+    path('video/signature/',                event_video.signature,                 name='event-video-signature'),
     path('quota/',                          views.quota_evenements,                name='events-quota'),
     path('create/',                         views.creer_evenement,                 name='creer-evenement'),
     path('upload-image/',                   views.upload_image,                    name='upload-image'),

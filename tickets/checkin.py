@@ -9,6 +9,7 @@ nom du participant pour que l'organisateur vérifie d'un coup d'œil.
 Un ticket ne peut entrer qu'une fois ; l'entrée est verrouillée en base
 (deux scanners en même temps ne valident pas deux fois le même ticket).
 """
+from events.wording import pass_word
 from django.db import transaction
 from django.http import Http404
 from django.utils import timezone
@@ -65,17 +66,18 @@ def check_in(request, event_id):
     data = request.data if isinstance(request.data, dict) else {}
     ticket = _find(event, data.get('code'))
     if ticket is None:
-        return Response({'result': 'invalid', 'detail': 'Ticket inconnu : ce QR code n’est pas un ticket Easevent.',
+        return Response({'result': 'invalid', 'detail': 'Code inconnu : ce QR code n’est pas une invitation ni un billet Easevent.',
                          'counts': _counts(event)})
     if ticket.event_id != event.id:
-        return Response({'result': 'wrong_event', 'detail': 'Ce ticket est pour un autre événement.',
+        return Response({'result': 'wrong_event', 'detail': 'Ce code est pour un autre événement.',
                          'participant': _person(ticket), 'counts': _counts(event)})
     with transaction.atomic():
         ticket = Ticket.objects.select_for_update().select_related('user').get(pk=ticket.pk)
         if ticket.status != Ticket.Status.GENERATED:
-            label = {'pending': 'pas encore validé (paiement non finalisé)', 'cancelled': 'annulé',
-                     'expired': 'expiré'}.get(ticket.status, ticket.status)
-            return Response({'result': 'not_valid', 'detail': f'Ticket {label}.',
+            w = pass_word(event)
+            label = {'pending': f"pas encore validé{w['e']} (paiement non finalisé)", 'cancelled': f"annulé{w['e']}",
+                     'expired': f"expiré{w['e']}"}.get(ticket.status, ticket.status)
+            return Response({'result': 'not_valid', 'detail': f"{w['One']} {label}.",
                              'participant': _person(ticket), 'counts': _counts(event)})
         if ticket.checked_in_at:
             return Response({'result': 'already', 'detail': 'Déjà entré.',

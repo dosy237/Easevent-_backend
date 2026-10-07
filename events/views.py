@@ -290,6 +290,17 @@ def creer_evenement(request):
         first = next(iter(ticket_errors.values()))
         return Response({'detail': first, **ticket_errors}, status=status.HTTP_400_BAD_REQUEST)
 
+    # ── Vidéo de présentation (événements publics, 45 s au plus) ──
+    from . import video as event_video
+    if data.get('video'):
+        if visibility != 'public':
+            return Response({'detail': 'La vidéo est réservée aux événements publics.', 'code': 'video_public_only'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        try:
+            ticketing.update(event_video.attach(None, request.user, data['video']))
+        except event_video.VideoError as exc:
+            return Response({'detail': exc.message, 'code': exc.code}, status=status.HTTP_400_BAD_REQUEST)
+
     # ── Génération du subdomain unique ───────────────────────────
     # slugify("Mon Mariage 2026") → "mon-mariage-2026"
     # On ajoute un compteur si le slug existe déjà
@@ -437,6 +448,18 @@ def modifier_evenement(request, event_id):
     for field, value in ticketing.items():
         setattr(event, field, value)
 
+    # Vidéo : ajouter, remplacer, changer la légende ou retirer (null)
+    if 'video' in data:
+        from . import video as event_video
+        if data['video'] and event.visibility != 'public':
+            return Response({'detail': 'La vidéo est réservée aux événements publics.', 'code': 'video_public_only'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        try:
+            for field, value in event_video.attach(event, request.user, data['video']).items():
+                setattr(event, field, value)
+        except event_video.VideoError as exc:
+            return Response({'detail': exc.message, 'code': exc.code}, status=status.HTTP_400_BAD_REQUEST)
+
     event.save()
     # Date, heure ou lieu modifiés : les participants sont prévenus
     notified = notify_changes(event, before)
@@ -485,7 +508,7 @@ def publier_evenement(request, event_id):
         if Ticket.objects.filter(event=event, status=Ticket.Status.GENERATED).exists():
             # Des participants ont déjà leur ticket : dépublier les priverait d'accès sans les prévenir
             return Response({
-                'detail': "Des participants ont déjà leur ticket : vous ne pouvez plus dépublier cet événement. "
+                'detail': "Des participants ont déjà leur invitation ou leur billet : vous ne pouvez plus dépublier cet événement. "
                           "Modifiez-le, ou supprimez-le pour l'annuler (les participants seront prévenus et remboursés).",
                 'code': 'has_participants'}, status=status.HTTP_409_CONFLICT)
         event.status = 'draft'

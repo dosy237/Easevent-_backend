@@ -66,7 +66,8 @@ def cancel_event(event, *, reason='event_cancelled', notify_guests=True):
     when = timezone.localtime(event.start_date)
     for user in guests:
         notify(user, Notification.Type.EVENT_CANCELLED, 'Événement annulé',
-               f"{event.title} du {when:%d/%m} n'aura pas lieu. Les tickets payés sont remboursés automatiquement.",
+               f"{event.title} du {when:%d/%m} n'aura pas lieu."
+               + (' Les paiements sont remboursés automatiquement.' if event.is_paid else ''),
                event=event, dedupe_key=f'event-cancelled:{event.id}')
     return {'notified': len(guests), 'refunds_failed': refunds_failed}
 

@@ -8,6 +8,8 @@ import re
 
 from django.utils import timezone
 
+from events.wording import pass_word
+
 MONTHS = ('janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août',
           'septembre', 'octobre', 'novembre', 'décembre')
 DAYS = ('lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche')
@@ -82,6 +84,7 @@ def facts(event):
         'dress_code': scrub(event.dress_code)[:80] if event.dress_code else '',
         'images': int(has_cover) + len(gallery),
         'visibility': event.visibility,
+        'pass': pass_word(event)['kind'],
         'host_first_name': (organizer.first_name or '').strip()[:40] if organizer else '',
     }
 

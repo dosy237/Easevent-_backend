@@ -20,6 +20,7 @@ Les clés sont lues dans les variables d'environnement du serveur.
 """
 import json
 import logging
+from events.wording import pass_word
 from decimal import Decimal, ROUND_HALF_UP
 
 import stripe
@@ -82,7 +83,7 @@ def sync_account(user, account=None):
         from notifications.models import Notification
         from notifications.services import notify
         notify(user, Notification.Type.PAYOUTS_READY, 'Paiements activés',
-               'Vous pouvez maintenant vendre des tickets : l’argent est versé sur votre compte bancaire.',
+               'Vous pouvez maintenant vendre des billets : l’argent est versé sur votre compte bancaire.',
                dedupe_key=f'payouts-ready:{user.stripe_account_id}')
     return user
 
@@ -143,7 +144,7 @@ def create_checkout(ticket, request):
     payment_intent_data = {
         'transfer_data': {'destination': organizer.stripe_account_id},
         'metadata': {'ticket_id': str(ticket.id), 'ticket_number': ticket.number},
-        'description': f"Ticket {ticket.number} — {ticket.event.title}"[:255],
+        'description': f"{pass_word(ticket.event)['One']} {ticket.number} — {ticket.event.title}"[:255],
     }
     fee = platform_fee(amount)
     if fee:
@@ -156,7 +157,7 @@ def create_checkout(ticket, request):
             'price_data': {
                 'currency': ticket.currency.lower(),
                 'unit_amount': amount,
-                'product_data': {'name': f"Ticket — {ticket.event.title}"[:250]},
+                'product_data': {'name': f"{pass_word(ticket.event)['One']} — {ticket.event.title}"[:250]},
             },
         }],
         customer_email=ticket.user.email,
@@ -241,7 +242,7 @@ def _notify_paid(ticket):
     from notifications.models import Notification
     from notifications.services import notify
     notify(ticket.user, Notification.Type.PAYMENT_SUCCEEDED, 'Paiement reçu',
-           f'{ticket.price} {ticket.currency} pour {ticket.event.title}. Votre ticket est prêt.',
+           f"{ticket.price} {ticket.currency} pour {ticket.event.title}. {pass_word(ticket.event)['One']} prêt{pass_word(ticket.event)['e']}.",
            event=ticket.event, ticket=ticket, dedupe_key=f'paid:{ticket.id}')
 
 
@@ -249,7 +250,7 @@ def _notify_payment_failed(ticket):
     from notifications.models import Notification
     from notifications.services import notify
     notify(ticket.user, Notification.Type.PAYMENT_FAILED, 'Paiement non abouti',
-           f'pour {ticket.event.title}. Votre ticket reste en attente : vous pouvez réessayer.',
+           f"pour {ticket.event.title}. {pass_word(ticket.event)['your'].capitalize()} reste en attente : vous pouvez réessayer.",
            event=ticket.event, ticket=ticket, dedupe_key=f'payment-failed:{ticket.id}')
 
 
@@ -312,7 +313,7 @@ def handle_event(event):
                     payment_status=Ticket.PaymentStatus.REFUNDED, status=Ticket.Status.CANCELLED)
                 from notifications.models import Notification
                 from notifications.services import notify
-                notify(ticket.user, Notification.Type.PAYMENT_REFUNDED, 'Ticket remboursé',
+                notify(ticket.user, Notification.Type.PAYMENT_REFUNDED, 'Paiement remboursé',
                        f'pour {ticket.event.title}. Le montant apparaît sur votre compte sous 5 à 10 jours.',
                        event=ticket.event, ticket=ticket, dedupe_key=f'refund:{ticket.id}')
 

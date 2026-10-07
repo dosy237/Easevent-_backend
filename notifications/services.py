@@ -12,6 +12,7 @@ Création des notifications (MVP §5).
   rien à configurer sur le serveur.
 ═══════════════════════════════════════════════════════════════
 """
+from events.wording import pass_word
 import logging
 from datetime import datetime, time, timedelta
 
@@ -128,7 +129,8 @@ def _reminders(user, now):
                .filter(user=user, status=Ticket.Status.PENDING, event__deleted_at__isnull=True,
                        event__start_date__gt=now, event__start_date__lte=now + timedelta(days=3)))
     for t in pending:
-        n = notify(user, Notification.Type.TICKET_TO_VALIDATE, 'Votre ticket attend',
+        w = pass_word(t.event)
+        n = notify(user, Notification.Type.TICKET_TO_VALIDATE, f"{w['One']} en attente"
                    f"{t.event.title} approche : {'finalisez le paiement' if not t.is_free else 'validez-le'} "
                    f'pour recevoir votre QR code.', event=t.event, ticket=t,
                    dedupe_key=f'pending-reminder:{t.id}')
@@ -199,7 +201,7 @@ def refresh_scheduled(user, force=False):
 # événement tant qu'elle n'est pas lue (« Claire a accepté · 3 autres »).
 # ─────────────────────────────────────────────────────────────
 GUEST_VERBS = {'accepted': 'a accepté votre invitation', 'declined': 'a décliné votre invitation',
-               'joined': 'participe', 'paid': 'a payé son ticket'}
+               'joined': 'participe', 'paid': 'a payé sa place'}
 
 
 def notify_guest_activity(event, guest, kind, name=None):

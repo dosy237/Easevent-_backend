@@ -3,6 +3,7 @@
 # Views pour les invitations.
 # ════════════════════════════════════════════════════════════════
 
+from events.wording import pass_word
 from rest_framework.decorators  import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response    import Response
@@ -110,7 +111,7 @@ def repondre_invitation(request, invitation_id):
         from notifications.models import Notification
         from notifications.services import notify
         notify(request.user, Notification.Type.TICKET_TO_VALIDATE, 'Invitation acceptée.',
-               f'Validez votre ticket pour {invitation.event.title} dans Mes tickets.',
+               f"Validez {pass_word(invitation.event)['your']} pour {invitation.event.title} dans Mes invitations.",
                event=invitation.event, invitation=invitation, ticket=ticket,
                dedupe_key=f'to-validate:{ticket.id}')
 

@@ -97,7 +97,7 @@ def fallback(f, direction, rng):
                       'note': f"Tenue demandée : {f['dress_code']}." if f['dress_code'] else ''},
         'capacity': {'title': 'Places limitées'},
         'cta': {'title': 'Réservez votre place' if paid else _pick(rng, ('Serez-vous des nôtres ?', 'Confirmez votre présence', 'On vous attend')),
-                'body': (f"Billet à {f['price_text']}. " if paid and f['price_text'] else '') + 'Votre ticket est généré aussitôt, à présenter à l’entrée.',
+                'body': (f"Billet à {f['price_text']}. " if paid and f['price_text'] else '') + ('Votre invitation' if f.get('pass') == 'invitation' else 'Votre billet') + ' est prêt' + ('e' if f.get('pass') == 'invitation' else '') + ' aussitôt, à présenter à l’entrée.',
                 'label': cta_label(f)},
         'host': {'title': _pick(rng, ('Votre hôte', 'L’organisation', 'Qui vous reçoit')),
                  'note': f"Organisé par {f['host_first_name']}. Une question ? Écrivez-lui depuis l’application." if f['host_first_name'] else 'Une question ? Écrivez à l’organisateur depuis l’application.'},
@@ -130,7 +130,8 @@ def faq(f, label):
         items.append({'q': 'La participation est-elle payante ?', 'a': 'Non, la participation est gratuite.'})
     if f['max_guests']:
         items.append({'q': 'Le nombre de places est-il limité ?', 'a': f"Oui, l’événement accueille {f['max_guests']} personnes au plus."})
-    items.append({'q': 'Comment confirmer ma présence ?', 'a': f"Touchez « {label} » : votre ticket est généré aussitôt, à présenter à l’entrée."})
+    word = 'votre invitation est prête' if f.get('pass') == 'invitation' else 'votre billet est prêt'
+    items.append({'q': 'Comment confirmer ma présence ?', 'a': f"Touchez « {label} » : {word} aussitôt, à présenter à l’entrée."})
     return items[:catalog.FAQ_MAX]
 
 

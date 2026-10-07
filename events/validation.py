@@ -115,6 +115,8 @@ def clean_core(data, current=None):
                 raise EventInputError('Lien invalide : il doit commencer par https://', 'online_link')
             link = link.strip()
         out['online_link'] = link
+    if creating or 'online_link_public' in data:
+        out['online_link_public'] = _bool(data.get('online_link_public', False), 'online_link_public')
     if creating or 'cover_image' in data:
         cover = data.get('cover_image') or None
         if cover is not None and (not isinstance(cover, str) or len(cover) > 512):

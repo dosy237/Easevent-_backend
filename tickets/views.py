@@ -230,8 +230,8 @@ def payment_return(request):
     flow = request.GET.get('flow', 'ticket')
     state = request.GET.get('status', '')
     pages = {
-        ('ticket', 'success'):  ('Paiement envoyé', 'Votre ticket apparaît dans « Mes tickets » dès que le paiement est confirmé.', 'easevent://tickets'),
-        ('ticket', 'cancel'):   ('Paiement interrompu', 'Votre ticket reste dans « Mes tickets › En attente ». Vous pourrez payer plus tard.', 'easevent://tickets'),
+        ('ticket', 'success'):  ('Paiement envoyé', 'Votre billet apparaît dans « Mes invitations » dès que le paiement est confirmé.', 'easevent://invitations'),
+        ('ticket', 'cancel'):   ('Paiement interrompu', 'Votre billet reste dans « Mes invitations › En attente ». Vous pourrez payer plus tard.', 'easevent://invitations'),
         ('connect', 'done'):    ('Informations enregistrées', 'Retournez dans Easevent pour voir l’état de vos paiements.', 'easevent://profil/paiements'),
         ('connect', 'refresh'): ('Lien expiré', 'Relancez l’activation des paiements depuis votre profil Easevent.', 'easevent://profil/paiements'),
         ('subscription', 'success'): ('Abonnement activé', 'Merci ! Retournez dans Easevent : vos nouvelles fonctionnalités sont prêtes.', 'easevent://profil/abonnement/succes'),

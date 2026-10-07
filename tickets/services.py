@@ -4,6 +4,7 @@ tickets/services.py
 Règles métier des tickets (MVP §5). Toutes les vues passent par ici.
 ═══════════════════════════════════════════════════════════════
 """
+from events.wording import pass_word
 from datetime import timedelta
 
 from django.db import IntegrityError, transaction
@@ -145,8 +146,9 @@ def generate_ticket(ticket, payment_status):
             transaction.on_commit(lambda: notify_guest_activity(event, guest, kind))
         if event.max_guests and generated_count(event) >= event.max_guests:
             transaction.on_commit(lambda: notify_event_full(event))
+        w = pass_word(event)
         notify_on_commit(
-            ticket.user, Notification.Type.TICKET_GENERATED, 'Ticket généré',
+            ticket.user, Notification.Type.TICKET_GENERATED, f"{w['One']} générée" if w['e'] else f"{w['One']} généré",
             f"pour {event.title}{' · paiement reçu' if paid else ''}. Présentez le QR code à l'entrée.",
             event=event, ticket=ticket, dedupe_key=f'ticket-generated:{ticket.id}',
         )

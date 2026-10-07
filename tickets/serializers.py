@@ -2,6 +2,8 @@
 from rest_framework import serializers
 
 from easevent.media import public_url
+from events.wording import pass_word
+
 from .models import Ticket
 
 
@@ -35,6 +37,10 @@ class TicketSerializer(serializers.ModelSerializer):
             'organizer_name':     e.organizer.full_name,
             'map':                _map(e),
             'has_rsvp':           e.rsvp_questions.exists(),     # questions RSVP : « Mes réponses » (M19)
+            # Lien de connexion : dans le billet / l'invitation dès qu'il est généré
+            'online_link':        e.online_link if e.is_online and e.online_link and
+                                  (obj.status == Ticket.Status.GENERATED or e.online_link_public) else None,
+            'pass_word':          pass_word(e),
         }
 
     def get_participant(self, obj):

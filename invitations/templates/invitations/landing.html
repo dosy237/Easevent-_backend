@@ -52,7 +52,7 @@
     <section class="card" aria-labelledby="t">
       <h1 id="t">{{ error.0 }}</h1>
       <p class="note" style="text-align:left;font-size:15px;line-height:22px;margin:0 0 16px">{{ error.1 }}</p>
-      <a class="btn primary" href="easevent://tickets">Ouvrir Easevent</a>
+      <a class="btn primary" href="easevent://invitations">Ouvrir Easevent</a>
     </section>
   {% elif declined %}
     <section class="card" aria-labelledby="t" role="status">
@@ -73,7 +73,7 @@
       <ol class="steps" aria-label="Étapes">
         <li><b>1</b>{% if inv.invited_user_id %}Se connecter{% else %}Créer un compte{% endif %}</li>
         <li><b>2</b>Accepter</li>
-        <li><b>3</b>Mon ticket</li>
+        <li><b>3</b>Mon invitation</li>
       </ol>
       {% if app_missing %}
         <p class="note" style="font-size:14px;margin:0 0 12px;color:#fff">L'application Easevent n'est pas encore installée sur ce téléphone.</p>
@@ -85,7 +85,7 @@
       {% elif app_missing or platform == 'other' %}
         <p class="note">{% if platform == 'other' %}Ouvrez ce lien sur votre téléphone pour répondre avec l'application Easevent.{% else %}L'application sera bientôt disponible sur votre store. Vous pouvez déjà décliner ci-dessous si vous ne venez pas.{% endif %}</p>
       {% else %}
-        <p class="note">L'application Easevent vous guide : création de compte{% if inv.email %} avec {{ inv.email }}{% endif %}, réponse et ticket.</p>
+        <p class="note">L'application Easevent vous guide : création de compte{% if inv.email %} avec {{ inv.email }}{% endif %}, réponse et invitation.</p>
       {% endif %}
     </section>
     <form class="decline" method="post">

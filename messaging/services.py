@@ -23,7 +23,7 @@ PREVIEW = {
     'invitation_sent': 'Invitation envoyée',
     'invitation_accepted': 'A accepté votre invitation',
     'invitation_declined': 'A décliné votre invitation',
-    'ticket_generated': 'Ticket généré',
+    'ticket_generated': 'Inscription confirmée',
 }
 
 

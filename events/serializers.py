@@ -48,6 +48,7 @@ class EventPublicSerializer(serializers.ModelSerializer):
     likes_count = serializers.SerializerMethodField()
     liked = serializers.SerializerMethodField()
     share_url = serializers.SerializerMethodField()
+    pass_word = serializers.SerializerMethodField()
 
     class Meta:
         # model : quel modèle Django ce serializer traduit
@@ -98,7 +99,14 @@ class EventPublicSerializer(serializers.ModelSerializer):
             'likes_count',         # nombre de « J'aime »
             'liked',               # l'utilisateur connecté a aimé
             'share_url',           # lien de partage avec aperçu (événements publics publiés)
+            'online_link_public',  # lien en ligne visible par tous (sinon : dans le billet / l'invitation)
+            'pass_word',           # « invitation » ou « billet » (formes et accords)
+            'video',               # vidéo de présentation : url, poster, légende, durée, dimensions
         ]
+
+    def get_pass_word(self, obj):
+        from .wording import pass_word
+        return pass_word(obj)
 
     def get_likes_count(self, obj):
         n = getattr(obj, 'likes_n', None)                 # annoté dans les listes (une seule requête)
@@ -212,6 +220,8 @@ class EventPublicSerializer(serializers.ModelSerializer):
         """
         if not obj.is_online or not obj.online_link:
             return None
+        if obj.online_link_public:                 # l'organisateur a choisi : ouvert à tous
+            return obj.online_link
         request = self.context.get('request')
         user = getattr(request, 'user', None)
         if not user or not user.is_authenticated:
