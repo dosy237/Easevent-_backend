@@ -104,7 +104,8 @@ def faq(f, label):
             when += f", jusqu’à {f['end_time_text']}"
         elif f['end_date_text'] and not f['same_day']:
             when += f", jusqu’au {f['end_date_text']}"
-        items.append({'q': 'Quand a lieu l’événement ?', 'a': when + '.'})
+        # 'key' : l'application recalcule la réponse dans le fuseau horaire du téléphone
+        items.append({'q': 'Quand a lieu l’événement ?', 'a': when + '.', 'key': 'when'})
     if f['is_online'] and not f['address']:
         items.append({'q': 'Où se déroule l’événement ?', 'a': 'En ligne : le lien de connexion est donné aux participants dans l’application.'})
     elif f['address']:

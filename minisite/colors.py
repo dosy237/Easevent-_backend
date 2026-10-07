@@ -128,7 +128,7 @@ def palette(primary, secondary=None, harmony='monochrome'):
         prim = from_hsl(h, max(s, 0.45), 0.5)
         acc = from_hsl(ah, 0.55, 0.62)
         line = from_hsl(h, 0.35, 0.86)
-        tint = from_hsl(ah, 0.6, 0.92)
+        tint = from_hsl(h, 0.55, 0.93)
         inv_bg = from_hsl(h, 0.35, 0.18)
     elif harmony == 'neutral':
         bg = '#FAFAF8'
@@ -148,7 +148,7 @@ def palette(primary, secondary=None, harmony='monochrome'):
         prim = from_hsl(h, max(s, 0.7), min(max(l, 0.42), 0.55))
         acc = from_hsl(ah, 0.85, 0.55)
         line = from_hsl(h, 0.3, 0.88)
-        tint = from_hsl(ah, 0.8, 0.93)
+        tint = from_hsl(h, 0.65, 0.94)
         inv_bg = from_hsl(h, 0.55, 0.16)
     else:  # monochrome, analogous, complementary, triadic
         bg = from_hsl(h, min(s, 0.4), 0.97)
@@ -161,8 +161,8 @@ def palette(primary, secondary=None, harmony='monochrome'):
         tint = from_hsl(h, min(s, 0.45), 0.93)
         inv_bg = from_hsl(h, min(s, 0.5), 0.14)
 
-    text = ensure(text, bg, 7)
-    muted = ensure(muted, bg, 4.5)
+    text = ensure(ensure(ensure(text, bg, 7), tint, 4.5), surface, 7)
+    muted = ensure(ensure(ensure(muted, bg, 4.5), tint, 4.5), surface, 4.5)
     prim = ensure(prim, bg, 3)
     acc = ensure(acc, bg, 3)
     inv_text = ensure('#FFFFFF' if luminance(inv_bg) < 0.4 else '#141414', inv_bg, 7)
@@ -185,6 +185,8 @@ def check(colors):
                 and contrast(colors['primary'], colors['bg']) >= 3
                 and contrast(colors['inverseText'], colors['inverseBg']) >= 4.5
                 and contrast(colors['text'], colors['surface']) >= 4.5
-                and contrast(colors['text'], colors['tint']) >= 4.5)
+                and contrast(colors['text'], colors['tint']) >= 4.5
+                and contrast(colors['muted'], colors['tint']) >= 4.5
+                and contrast(colors['muted'], colors['surface']) >= 4.5)
     except (KeyError, ValueError, TypeError):
         return False
