@@ -161,3 +161,38 @@ Les boutons n'apparaissent pas tant que `EXPO_PUBLIC_OAUTH_ENABLED` n'est pas à
 - [ ] Faire relire les Conditions d'utilisation (écran CGU) et la politique de confidentialité
       par un juriste : société, médiateur de la consommation, âge minimum, conditions de
       remboursement des abonnements.
+
+## 14. Mini-site IA (app `minisite`)
+
+**Principe** : l'IA compose, elle ne code pas. Un mini-site est un plan JSON (sections × variantes × thème) dessiné par l'application avec ses propres composants. Aucun code produit par l'IA n'est exécuté. Le mini-site n'existe **que dans l'application**, sans adresse web publique ; il suit les mêmes règles d'accès que l'événement.
+
+- **Bibliothèque** : `minisite/catalog.py`, reflétée dans `easevent_frontend/components/minisite/catalog.js`.
+  - 15 types de sections, 51 variantes ;
+  - 12 paires de polices, 9 harmonies de couleurs, 9 ornements, 4 formes, 3 densités ;
+  - 3 fonds par section.
+- **Lisibilité** : `minisite/colors.py` impose les contrastes WCAG, quelle que soit la couleur choisie (testé sur plus de 5 000 palettes au hasard).
+- **6 propositions par génération**, une par direction artistique (éditorial, photo immersive, minimal, festif, luxe, ludique). Chaque disposition a une empreinte unique en base : jamais deux fois la même, ni entre les 6, ni avec les mini-sites déjà générés.
+- **Faits** : la date, le lieu, le prix, la tenue et les questions fréquentes viennent de l'événement. L'IA n'écrit que les textes d'ambiance, et un texte contenant une heure ou un prix inventés est rejeté.
+- **Quotas de génération par événement** : Gratuit 3, Standard 15, Pro illimité (`MINISITE_GENERATION_LIMITS`). Une génération échouée n'est pas décomptée.
+
+### Modèles d'IA (gratuits, facultatifs)
+Sans clé, le générateur de secours produit quand même les 6 propositions avec des textes rédigés. Chaque clé ajoutée améliore le résultat.
+
+| Variable | Où la créer | Rôle |
+|---|---|---|
+| `GEMINI_API_KEY` | https://aistudio.google.com/apikey | Rédaction (1er choix) |
+| `GROQ_API_KEY` | https://console.groq.com/keys | Relecture (1er choix), rédaction en repli |
+| `OPENROUTER_API_KEY` | https://openrouter.ai/settings/keys | Repli pour tous les rôles |
+| `MISTRAL_API_KEY` | https://console.mistral.ai/api-keys | Direction artistique **seulement**, sans aucune donnée saisie |
+
+Réglages facultatifs :
+- `MINISITE_GEMINI_MODEL`, `MINISITE_GROQ_MODEL`, `MINISITE_OPENROUTER_MODEL`, `MINISITE_MISTRAL_MODEL` : changer de modèle sans toucher au code ;
+- `MINISITE_AI_TIMEOUT` (25 s) ;
+- `MINISITE_ASYNC` (True : génération par Celery).
+
+### Journal d'apprentissage (futur modèle Easevent)
+- **Emplacement** : `MINISITE_DATASET_DIR`, par défaut `data/minisite/AAAA-MM.jsonl`, exclu de Git. À monter sur un volume persistant en production.
+- **Contenu** : une ligne par génération, choix, retouche ou régénération, avec les réponses de chaque modèle, sa durée et son succès.
+- **Données personnelles** : emails, numéros et liens sont retirés ; l'organisateur est pseudonymisé.
+- **Usage** : quand il y aura assez de données, on évaluera les modèles et on entraînera le nôtre.
+- **Arrêt** : `MINISITE_DATASET_ENABLED=False`.
