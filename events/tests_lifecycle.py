@@ -204,6 +204,21 @@ class LifecycleTest(TestCase):
                              format='json')
         self.assertEqual(r.status_code, 201)
 
+    # ── Photos : nom unique, image seulement ──────────────────
+    def test_envoi_de_photo(self):
+        png = 'data:image/png;base64,iVBORw0KGgo='
+        with mock.patch('cloudinary.uploader.upload', return_value={'secure_url': 'https://res.cloudinary.com/x.jpg',
+                                                                    'public_id': 'p'}) as up:
+            r1 = self.orga_c.post('/api/events/upload-image/', {'image': png, 'name': 'cover'}, format='json')
+            r2 = self.orga_c.post('/api/events/upload-image/', {'image': png, 'name': 'cover'}, format='json')
+        self.assertEqual((r1.status_code, r2.status_code), (200, 200))
+        ids = [c.kwargs['public_id'] for c in up.call_args_list]
+        self.assertNotEqual(ids[0], ids[1])                                   # la 2e couverture n'écrase pas la 1re
+        self.assertFalse(up.call_args_list[0].kwargs['overwrite'])
+        for bad in ('https://exemple.com/image.jpg', 'pas une image', None, 'data:text/html;base64,PGh0bWw+'):
+            r = self.orga_c.post('/api/events/upload-image/', {'image': bad}, format='json')
+            self.assertEqual(r.status_code, 400, bad)
+
     # ── Entrées invalides : jamais d'erreur 500 ───────────────
     def test_entrees_invalides(self):
         base = {'title': 'Test', 'event_type': 'soiree', 'start_date': '2026-11-20T19:00:00',

@@ -201,22 +201,28 @@ def upload_image(request):
         "name":  "cover"  ← identifiant de l'image (cover, gallery_1, gallery_2)
     }
     """
-    image_data = request.data.get('image')
-    image_name = request.data.get('name', 'event_image')
+    import re
+    import uuid as _uuid
+    data = request.data if isinstance(request.data, dict) else {}
+    image_data = data.get('image')
+    image_name = re.sub(r'[^a-z0-9_-]', '', str(data.get('name') or 'image').lower())[:30] or 'image'
 
-    if not image_data:
-        return Response(
-            {'detail': 'Aucune image fournie.'},
-            status=status.HTTP_400_BAD_REQUEST
-        )
+    # Uniquement une image encodée (jamais une URL : Cloudinary irait la chercher), 10 Mo au plus
+    if not isinstance(image_data, str) or not re.match(r'^data:image/(jpeg|jpg|png|webp|heic|heif|gif);base64,', image_data):
+        return Response({'detail': 'Aucune image valide fournie.'}, status=status.HTTP_400_BAD_REQUEST)
+    if len(image_data) > 14_000_000:
+        return Response({'detail': 'Image trop lourde (10 Mo maximum).'}, status=status.HTTP_400_BAD_REQUEST)
 
+    folder = 'avatars' if image_name == 'avatar' else 'events'
     try:
         result = cloudinary.uploader.upload(
             image_data,
-            folder         = f'easevent/events/{request.user.id}',
-            public_id      = f'{image_name}_{request.user.id}',
-            overwrite      = True,
-            transformation = [{'width': 1920, 'crop': 'limit', 'quality': 'auto'}]
+            folder         = f'easevent/{folder}/{request.user.id}',
+            # Nom unique : une nouvelle photo ne remplace jamais celle d'un autre événement
+            public_id      = f'{image_name}_{_uuid.uuid4().hex[:16]}',
+            overwrite      = False,
+            transformation = [{'width': 1920, 'crop': 'limit', 'quality': 'auto', 'fetch_format': 'auto'}]
+            if folder == 'events' else [{'width': 512, 'height': 512, 'crop': 'fill', 'gravity': 'face', 'quality': 'auto'}],
         )
         return Response({
             'url':       result['secure_url'],
