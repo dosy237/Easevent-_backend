@@ -302,7 +302,7 @@ def apple_app_site_association(request):
     if not settings.APPLE_TEAM_ID:
         raise Http404
     return JsonResponse({'applinks': {'apps': [], 'details': [{
-        'appID': f'{settings.APPLE_TEAM_ID}.{settings.IOS_BUNDLE_ID}', 'paths': ['/i/*'],
+        'appID': f'{settings.APPLE_TEAM_ID}.{settings.IOS_BUNDLE_ID}', 'paths': ['/i/*', '/e/*'],
     }]}})
 
 
