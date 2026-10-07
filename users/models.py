@@ -127,6 +127,13 @@ class User(AbstractBaseUser, PermissionsMixin):
         default      = False,
         verbose_name = "Accepte de recevoir les nouveautés par email"
     )
+    # ── Téléphone (retrouver les invitations reçues par SMS) ──
+    # Chiffré comme les numéros des invités (invitations/crypto.py) ;
+    # phone_hash = empreinte HMAC, unique parmi les numéros vérifiés.
+    phone_number      = models.CharField(max_length=255, null=True, blank=True, verbose_name="Téléphone (chiffré)")
+    phone_hash        = models.CharField(max_length=64, null=True, blank=True, db_index=True)
+    phone_verified_at = models.DateTimeField(null=True, blank=True, verbose_name="Téléphone vérifié le")
+
     # Préférences de notification (M17) : {"reminders": bool, "daily_summary": bool}
     notification_prefs = models.JSONField(default=dict, blank=True, verbose_name="Préférences de notification")
 
@@ -339,6 +346,22 @@ class Domain(models.Model):
 # Stocke les tokens de vérification email temporaires.
 # Chaque token expire après 24 heures.
 # ─────────────────────────────────────────────────────────────────
+class PhoneVerification(models.Model):
+    """
+    Code à 6 chiffres envoyé par SMS pour prouver la possession d'un numéro.
+    Seule l'empreinte du code est stockée ; 5 essais, 10 minutes.
+    """
+    user         = models.OneToOneField(User, on_delete=models.CASCADE, related_name='phone_verification')
+    phone_number = models.CharField(max_length=255, verbose_name="Numéro à vérifier (chiffré)")
+    code_hash    = models.CharField(max_length=64)
+    attempts     = models.PositiveSmallIntegerField(default=0)
+    expires_at   = models.DateTimeField()
+    created_at   = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'phone_verifications'
+
+
 class EmailVerification(models.Model):
     """
     Token de vérification email.
@@ -354,6 +377,9 @@ class EmailVerification(models.Model):
     # n'est jamais stocké (une fuite de la base ne permet pas
     # d'activer des comptes). Voir users/tokens.py.
     token      = models.CharField(max_length=64, unique=True)
+    # Code à 6 chiffres (même email que le lien) : empreinte + essais
+    code_hash  = models.CharField(max_length=64, blank=True, default='')
+    attempts   = models.PositiveSmallIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
     expires_at = models.DateTimeField()
 

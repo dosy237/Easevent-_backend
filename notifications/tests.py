@@ -70,7 +70,7 @@ class NotificationFlowTest(TestCase):
         auth(self.client, self.guest)
         r = self.client.get('/api/notifications/', {'category': 'system'})
         self.assertEqual([n['title'] for n in r.data['results']], ['Paiement'])
-        self.assertEqual(r.data['unread'], {'events': 1, 'messages': 0, 'system': 1, 'all': 2})
+        self.assertEqual(r.data['unread'], {'events': 1, 'messages': 0, 'social': 0, 'system': 1, 'all': 2})
 
         first = r.data['results'][0]['id']
         self.assertEqual(self.client.post(f'/api/notifications/{first}/read/').data['unread']['all'], 1)
@@ -103,7 +103,7 @@ class NotificationFlowTest(TestCase):
 
     def test_preferences(self):
         auth(self.client, self.guest)
-        self.assertEqual(self.client.get('/api/notifications/preferences/').data, {'reminders': True, 'daily_summary': True})
+        self.assertEqual(self.client.get('/api/notifications/preferences/').data, {'reminders': True, 'daily_summary': True, 'push': True, 'messages': True, 'guest_responses': True})
         r = self.client.patch('/api/notifications/preferences/', {'reminders': False}, format='json')
         self.assertFalse(r.data['reminders'])
         self.assertEqual(self.client.patch('/api/notifications/preferences/', {'reminders': 'non'}, format='json').status_code, 400)

@@ -2,6 +2,8 @@
 from rest_framework import serializers
 
 from easevent.media import public_url
+from events.wording import pass_word
+
 from .models import Ticket
 
 
@@ -10,13 +12,14 @@ class TicketSerializer(serializers.ModelSerializer):
     participant = serializers.SerializerMethodField()
     qr_payload  = serializers.SerializerMethodField()
     invitation_id = serializers.UUIDField(read_only=True)
+    offered_by  = serializers.SerializerMethodField()
 
     class Meta:
         model  = Ticket
         fields = [
             'id', 'number', 'status', 'payment_status', 'price', 'currency',
-            'dress_code', 'generated_at', 'created_at', 'invitation_id',
-            'event', 'participant', 'qr_payload',
+            'dress_code', 'generated_at', 'checked_in_at', 'created_at', 'invitation_id',
+            'event', 'participant', 'qr_payload', 'offered_by',
         ]
 
     def get_event(self, obj):
@@ -33,7 +36,22 @@ class TicketSerializer(serializers.ModelSerializer):
             'cover_image':        public_url(e.cover_image, self.context.get('request')),
             'dress_code':         e.dress_code,
             'organizer_name':     e.organizer.full_name,
+            'map':                _map(e),
+            'has_rsvp':           e.rsvp_questions.exists(),     # questions RSVP : « Mes réponses » (M19)
+            # Lien de connexion : dans le billet / l'invitation dès qu'il est généré
+            'online_link':        e.online_link if e.is_online and e.online_link and
+                                  (obj.status == Ticket.Status.GENERATED or e.online_link_public) else None,
+            'pass_word':          pass_word(e),
+            'timezone':           e.timezone,
         }
+
+    def get_offered_by(self, obj):
+        # Billet offert par un proche : son prénom et le mot qu'il a laissé
+        if not obj.purchased_by_id:
+            return None
+        gift = getattr(obj, 'gift', None)
+        return {'name': obj.purchased_by.full_name, 'first_name': obj.purchased_by.first_name,
+                'message': gift.message if gift else ''}
 
     def get_participant(self, obj):
         return obj.user.full_name
@@ -41,3 +59,13 @@ class TicketSerializer(serializers.ModelSerializer):
     def get_qr_payload(self, obj):
         # Le QR n'existe que pour un ticket généré
         return obj.qr_payload if obj.status == Ticket.Status.GENERATED else None
+
+
+def _map(e):
+    """Liens Google Maps du lieu (bouton « Itinéraire » du ticket)."""
+    from events.geo import maps_links
+    if e.is_online or not e.location_address:
+        return None
+    lat = float(e.latitude) if e.latitude is not None else None
+    lng = float(e.longitude) if e.longitude is not None else None
+    return maps_links(e.location_address, lat, lng)

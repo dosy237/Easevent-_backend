@@ -9,7 +9,7 @@ services:
       - ./staticfiles:/app/staticfiles
       - ./media:/app/media
     ports:
-      - "8009:8000"
+      - "127.0.0.1:8009:8000"     # joignable seulement par nginx (même machine)
     env_file:
       - .env
     depends_on:
@@ -31,16 +31,36 @@ services:
       - POSTGRES_DB=${DB_NAME}
       - POSTGRES_USER=${DB_USER}
       - POSTGRES_PASSWORD=${DB_PASSWORD}
+    # Base de données : jamais exposée sur Internet (accès local uniquement)
     ports:
-      - "${DB_PORT:-5436}:${DB_PORT:-5436}"
+      - "127.0.0.1:${DB_PORT:-5436}:${DB_PORT:-5436}"
     networks:
       - mynetwork
 
   redis:
     image: redis:7
     container_name: redis
+    restart: always
+    # Pas de port publié : Redis (sans mot de passe) reste interne au réseau Docker
+    networks:
+      - mynetwork
+
+  # Messagerie instantanée (WebSocket /ws/) : nginx y envoie les connexions /ws/
+  realtime:
+    build: .
+    image: easevent-backend
+    container_name: realtime
+    command: daphne -b 0.0.0.0 -p 8001 --proxy-headers easevent.asgi:application
+    restart: unless-stopped
+    volumes:
+      - .:/app
     ports:
-      - "6379:6379"
+      - "127.0.0.1:8010:8001"
+    env_file:
+      - .env
+    depends_on:
+      - redis
+      - db
     networks:
       - mynetwork
 

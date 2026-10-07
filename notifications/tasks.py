@@ -20,6 +20,12 @@ from django.utils import timezone
 logger = logging.getLogger(__name__)
 
 
+@shared_task(name='notifications.send_push', ignore_result=True)
+def send_push(user_id, title, body, data, thread=None):
+    from .push import deliver
+    return deliver(user_id, title, body, data, thread)
+
+
 def _send_reminder_email(notification):
     from easevent.media import public_url
     from invitations.services import fr_datetime
@@ -28,7 +34,7 @@ def _send_reminder_email(notification):
     context = {
         'first_name': user.first_name,
         'event_title': event.title,
-        'date': fr_datetime(event.start_date),
+        'date': fr_datetime(event.start_date, event),
         'location': 'En ligne' if event.is_online else (event.location_address or ''),
         'online_link': event.online_link if event.is_online else '',
         'dress_code': event.dress_code or '',

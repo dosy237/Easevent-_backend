@@ -22,18 +22,27 @@ def hash_token(raw_token):
     return hashlib.sha256(raw_token.encode('utf-8')).hexdigest()
 
 
-def create_email_verification(user):
-    """Remplace le jeton éventuel de l'utilisateur et retourne le nouveau jeton en clair."""
+def code_hash(user, code):
+    return hashlib.sha256(f'email:{user.pk}:{code}'.encode('utf-8')).hexdigest()
+
+
+def create_email_verification(user, with_code=False):
+    """
+    Remplace la vérification éventuelle de l'utilisateur.
+    Retourne le jeton du lien en clair, ou (jeton, code) si with_code.
+    """
     from .models import EmailVerification
 
     raw_token = secrets.token_urlsafe(32)
+    code = f'{secrets.randbelow(10 ** 6):06d}'
     EmailVerification.objects.filter(user=user).delete()
     EmailVerification.objects.create(
         user       = user,
         token      = hash_token(raw_token),
+        code_hash  = code_hash(user, code),
         expires_at = timezone.now() + VERIFICATION_TTL,
     )
-    return raw_token
+    return (raw_token, code) if with_code else raw_token
 
 
 def find_email_verification(raw_token):

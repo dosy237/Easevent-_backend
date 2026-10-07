@@ -12,6 +12,7 @@ Contient 4 tables :
 
 import uuid
 from django.db import models
+from django.conf import settings
 
 
 # ─────────────────────────────────────────────────────────────
@@ -141,6 +142,19 @@ class Event(models.Model):
     ambiance = models.CharField(max_length=15, choices=Ambiance.choices, blank=True, default='')
     # Ambiance libre quand l'organisateur choisit « Autre » (ex. « Bohème »)
     ambiance_label = models.CharField(max_length=40, blank=True, default='', verbose_name="Ambiance personnalisée")
+    # Vidéo de présentation (événements publics) : 45 s au plus, hébergée sur Cloudinary
+    video_public_id = models.CharField(max_length=200, blank=True, default='')
+    video = models.JSONField(null=True, blank=True, verbose_name="Vidéo")   # url, poster, durée, dimensions, légende
+    # Événement en ligne : lien visible par tous, ou seulement dans le billet / l'invitation des participants
+    online_link_public = models.BooleanField(default=False, verbose_name="Lien en ligne visible par tous")
+    # Fuseau horaire du lieu de l'événement (IANA : « Europe/Paris », « Africa/Douala »)
+    timezone = models.CharField(max_length=64, default='Europe/Paris', verbose_name="Fuseau horaire")
+    # Thème de l'événement (« Bohème champêtre », « IA & climat ») : fil conducteur du mini-site
+    # Fil conducteur du mini-site : le SUJET d'une conférence (« L'impact de l'IA sur nos capacités
+    # cognitives »), l'UNIVERS d'une célébration (« Amour et bohème »)
+    theme = models.CharField(max_length=160, blank=True, default='', verbose_name="Thème")
+    # Réponses automatiques aux questions des participants (messagerie), désactivables par l'organisateur
+    assistant_enabled = models.BooleanField(default=True, verbose_name="Réponses automatiques")
 
     # ── Sous-domaine et domaine personnalisé ─────────────────
     subdomain = models.CharField(
@@ -192,6 +206,15 @@ class Event(models.Model):
 
     # ── Métriques ─────────────────────────────────────────────
     view_count = models.PositiveIntegerField(default=0, verbose_name="Nombre de vues")
+    # Présence réelle, saisie par l'organisateur après l'événement
+    attendance_count = models.PositiveIntegerField(null=True, blank=True, verbose_name="Personnes réellement présentes")
+    attendance_reported_at = models.DateTimeField(null=True, blank=True)
+
+    # Répartition des places entre l'organisateur et ses co-organisateurs : {"<user_id>": nombre}
+    guest_split = models.JSONField(default=dict, blank=True, verbose_name="Répartition des invités par organisateur")
+
+    # Première publication : un événement publié puis supprimé reste compté dans le quota du plan
+    published_at = models.DateTimeField(null=True, blank=True, verbose_name="Date de première publication")
 
     # ── Soft delete et timestamps ─────────────────────────────
     deleted_at = models.DateTimeField(null=True, blank=True, verbose_name="Date suppression")
@@ -270,6 +293,10 @@ class EventMedia(models.Model):
         blank = True,
         verbose_name = "5 couleurs dominantes (RGB)"
     )
+
+    caption = models.CharField(max_length=300, blank=True, default='', verbose_name="Légende")
+    width = models.PositiveIntegerField(null=True, blank=True)
+    height = models.PositiveIntegerField(null=True, blank=True)
 
     # True par défaut, False pour les photos souvenir à valider
     is_approved = models.BooleanField(default=True, verbose_name="Approuvée par l'organisateur")
@@ -367,8 +394,21 @@ class EventCollaborator(models.Model):
     et cumulables sans multiplier les colonnes en base.
     """
 
+    class Role(models.TextChoices):
+        COHOST       = 'cohost',       'Co-organisateur'
+        PHOTOGRAPHER = 'photographer', 'Photographe'
+
+    class Status(models.TextChoices):
+        PENDING  = 'pending',  'En attente'
+        ACCEPTED = 'accepted', 'Acceptée'
+        DECLINED = 'declined', 'Refusée'
+
     id    = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name='collaborators')
+    role   = models.CharField(max_length=15, choices=Role.choices, default=Role.COHOST)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
+    invited_by = models.ForeignKey('users.User', on_delete=models.SET_NULL, null=True, blank=True,
+                                   related_name='+')
     user  = models.ForeignKey(
         'users.User',
         on_delete    = models.CASCADE,
@@ -391,3 +431,28 @@ class EventCollaborator(models.Model):
 
     def __str__(self):
         return f"{self.user.full_name} collabore sur '{self.event.title}'"
+
+
+class EventComment(models.Model):
+    """Commentaire laissé après l'événement (public : tout le monde ; privé : les invités)."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name='comments')
+    author = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='event_comments')
+    body = models.TextField(max_length=1000)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [models.Index(fields=['event', '-created_at'])]
+
+
+
+class EventLike(models.Model):
+    """« J'aime » sur un événement public (un par personne)."""
+    event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name='likes')
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='event_likes')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['event', 'user'], name='event_like_unique')]
+        indexes = [models.Index(fields=['event'])]

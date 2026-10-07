@@ -142,9 +142,12 @@ def plan_usage(event):
 # ─────────────────────────────────────────────────────────────
 # Formatage (email, SMS)
 # ─────────────────────────────────────────────────────────────
-def fr_datetime(dt):
-    dt = timezone.localtime(dt)
-    return f"{JOURS[dt.weekday()]} {dt.day} {MOIS[dt.month - 1]} {dt.year} · {dt:%H}h{dt:%M}"
+def fr_datetime(dt, event=None):
+    """Date dans le fuseau de l'événement, avec son nom (« · 15h00 (heure de Paris) »)."""
+    from events.tz import label, local
+    dt = local(dt, event) if event is not None else timezone.localtime(dt)
+    text = f"{JOURS[dt.weekday()]} {dt.day} {MOIS[dt.month - 1]} {dt.year} · {dt:%H}h{dt:%M}"
+    return f"{text} ({label(event)})" if event is not None else text
 
 
 def price_label(event):
@@ -176,7 +179,7 @@ def _build_email(inv, raw, request, reminder, connection):
         'organizer_first_name': _single_line(organizer.first_name) or org_name,
         'event_title': title,
         'cover_url': public_url(event.cover_image, request) if event.cover_image else '',
-        'date': fr_datetime(event.start_date),
+        'date': fr_datetime(event.start_date, event),
         'location': 'En ligne' if event.is_online else (event.location_address or ''),
         'price': price_label(event),
         'dress_code': event.dress_code or '',
@@ -197,15 +200,44 @@ def _build_email(inv, raw, request, reminder, connection):
     return msg
 
 
+# Alphabet SMS standard (GSM 03.38) : hors de cet alphabet, chaque SMS
+# compte pour deux fois plus de segments (coût doublé).
+GSM7 = set("@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !\"#¤%&'()*+,-./0123456789:;<=>?¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§¿abcdefghijklmnopqrstuvwxyzäöñüà")
+SMS_REPLACE = {'«': '"', '»': '"', '’': "'", '‘': "'", '“': '"', '”': '"', '–': '-', '—': '-', '…': '...', '\u00a0': ' ', '€': 'EUR'}
+
+
+def gsm7(text):
+    import unicodedata
+    out = []
+    for ch in text:
+        if ch in GSM7:
+            out.append(ch)
+        elif ch in SMS_REPLACE:
+            out.append(SMS_REPLACE[ch])
+        else:
+            base = unicodedata.normalize('NFD', ch)[0]
+            out.append(base if base in GSM7 else '')
+    return ''.join(out)
+
+
 def sms_body(inv, raw, request=None):
+    """
+    SMS reçu dans l'application Messages du téléphone, par exemple :
+    Lea Mbarga vous invite a "Mariage de Sarah & Karim" le mar. 17/11 a 19h51.
+    On a hate de partager ce grand jour avec toi !
+    Repondez ici : https://easevent.nitypulse.com/i/…
+    """
     event = inv.event
-    org = _single_line(inv.event.organizer.first_name) or 'Un organisateur'
-    date = timezone.localtime(event.start_date).strftime('%d/%m/%Y')
-    parts = [f"{org} vous invite à « {_single_line(event.title)[:60]} » le {date}."]
+    org = _single_line(inv.event.organizer.full_name) or 'Un organisateur'
+    from events.tz import local
+    start = local(event.start_date, event)
+    days = ['lun.', 'mar.', 'mer.', 'jeu.', 'ven.', 'sam.', 'dim.']
+    when = f"{days[start.weekday()]} {start:%d/%m} à {start:%H}h{start:%M}"
+    lines = [f"{org} vous invite à \"{_single_line(event.title)[:60]}\" le {when}."]
     if inv.message:
-        parts.append(_single_line(inv.message))
-    parts.append(invitation_link(raw, request))
-    return ' '.join(parts)
+        lines.append(_single_line(inv.message))
+    lines.append(f"Répondez ici : {invitation_link(raw, request)}")
+    return gsm7('\n'.join(lines))
 
 
 def deliver(pairs, request=None, reminder=False):
@@ -278,6 +310,10 @@ def invite_batch(event, organizer, *, emails=(), phones=(), user_ids=(), message
         raise InviteError(f'{settings.INVITE_BATCH_MAX} invités maximum par envoi.', 'batch_too_large')
 
     skipped, candidates, seen = [], [], set()
+    # organizer : la personne qui invite (organisateur ou co-organisateur) ; l'équipe ne s'invite pas
+    from events.team import TeamError, check_invite_quota, manager_ids
+    team_ids = set(manager_ids(event)) | {organizer.id}
+    team_emails = {e.lower() for e in User.objects.filter(id__in=team_ids).values_list('email', flat=True) if e}
 
     def skip(value, reason):
         skipped.append({'value': value, 'reason': reason})
@@ -295,7 +331,7 @@ def invite_batch(event, organizer, *, emails=(), phones=(), user_ids=(), message
         user = members.get(uid)
         if user is None:
             skip(uid, 'unknown_user')
-        elif user.id == organizer.id:
+        elif user.id in team_ids:
             skip(user.full_name, 'self')
         elif ('u', user.id) not in seen:
             seen.add(('u', user.id))
@@ -313,7 +349,7 @@ def invite_batch(event, organizer, *, emails=(), phones=(), user_ids=(), message
     accounts = {u.email.lower(): u for u in User.objects.filter(
         email__in=normalized, is_active=True, is_verified=True, deleted_at__isnull=True)} if normalized else {}
     for email in normalized:
-        if email == organizer.email.lower():
+        if email in team_emails:
             skip(email, 'self')
             continue
         user = accounts.get(email)
@@ -358,6 +394,11 @@ def invite_batch(event, organizer, *, emails=(), phones=(), user_ids=(), message
             'plan_limit', 403, {'usage': usage, 'remaining': remaining},
         )
 
+    try:
+        check_invite_quota(event, organizer, len(fresh))
+    except TeamError as exc:
+        raise InviteError(exc.message, exc.code, exc.status, {'usage': usage})
+
     expires_at = (event.end_date or event.start_date) + timedelta(days=7)
     created = []
     with transaction.atomic():
@@ -365,6 +406,7 @@ def invite_batch(event, organizer, *, emails=(), phones=(), user_ids=(), message
             inv = Invitation(
                 event=event,
                 invited_user=c['user'],
+                invited_by=organizer,
                 email=c['email'],
                 contact_name=c['name'],
                 message=message,
@@ -447,9 +489,14 @@ def queue_send(invitations, reminder=False):
     if in_app:
         Invitation.objects.filter(pk__in=in_app).update(delivery_status='in_app')
     if ids:
+        from django.conf import settings
         from easevent.dispatch import dispatch
         from .tasks import send_invitations
-        dispatch(send_invitations, ids, reminder=reminder)
+        # Envoi par vagues : le serveur et le fournisseur SMS ne sont jamais saturés
+        size, gap = settings.INVITE_WAVE_SIZE, settings.INVITE_WAVE_SECONDS
+        for i in range(0, len(ids), size):
+            dispatch(send_invitations, ids[i:i + size], reminder=reminder,
+                     countdown=(i // size) * gap or None)
 
 
 def send_now(invitation_ids, reminder=False):

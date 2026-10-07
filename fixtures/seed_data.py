@@ -12,7 +12,8 @@ import secrets
 
 from users.models import User, UserPreferences
 from events.models import Event
-from invitations.models import Invitation, RSVPQuestion, RSVPResponse
+from invitations.models import Invitation
+from rsvp.models import RsvpAnswer, RsvpQuestion
 from analytics.models import Feedback
 from subscriptions.models import Subscription
 
@@ -28,8 +29,7 @@ with transaction.atomic():
 
     # === 1. NETTOYAGE ===
     print("\n[1/5] Nettoyage des données...")
-    RSVPResponse.objects.all().delete()
-    RSVPQuestion.objects.all().delete()
+    RsvpQuestion.objects.all().delete()
     Feedback.objects.all().delete()
     Invitation.objects.all().delete()
     Event.objects.all().delete()
@@ -117,15 +117,12 @@ with transaction.atomic():
         expires_at=dt(30),                    # ← Correction ici
     )
 
-    q_alim = RSVPQuestion.objects.create(
-        event=mariage, order=1,
-        question_text="Avez-vous des restrictions alimentaires ?",
-        question_type="text", is_required=False
+    q_alim = RsvpQuestion.objects.create(
+        event=mariage, position=0, kind="text", required=False,
+        label="Avez-vous des restrictions alimentaires ?",
     )
 
-    RSVPResponse.objects.create(
-        question=q_alim, invitation=inv_marie, answer="Allergie aux fruits à coque"
-    )
+    RsvpAnswer.objects.create(question=q_alim, user=marie, value="Allergie aux fruits à coque")
 
     print(f"      ✓ {Invitation.objects.count()} invitations créées.")
 

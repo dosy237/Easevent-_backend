@@ -35,8 +35,17 @@ FRONTEND_URL = config('FRONTEND_URL', default='').rstrip('/')
 
 TESTING = 'test' in sys.argv
 
-# En-tête proxy SSL (obligatoire sur Render)
+# En-tête proxy SSL (nginx transmet X-Forwarded-Proto)
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
+# Formulaires POST des pages web (ex. décliner une invitation sur /i/<jeton>/)
+# derrière HTTPS : l'origine publique doit être déclarée.
+CSRF_TRUSTED_ORIGINS = [o for o in config(
+    'CSRF_TRUSTED_ORIGINS',
+    default=PUBLIC_BASE_URL if PUBLIC_BASE_URL.startswith('https://') else '').split(',') if o]
+
+# Documentation de l'API (Swagger) : seulement en développement, sauf API_DOCS=True
+API_DOCS = config('API_DOCS', default=DEBUG, cast=bool)
 
 # ─────────────────────────────────────────────────────────────
 # CORS
@@ -59,6 +68,7 @@ AUTH_USER_MODEL = 'users.User'
 # APPLICATIONS
 # ─────────────────────────────────────────────────────────────
 INSTALLED_APPS = [
+    'daphne',               # runserver sert aussi les WebSocket (Channels) — doit rester en tête
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -80,6 +90,13 @@ INSTALLED_APPS = [
     'subscriptions',
     'tickets',
     'notifications',
+    'messaging',
+    'social',
+    'rsvp',
+    'minisite',
+    'adminpanel',
+    'baskets',
+    'channels',
 ]
 
 # ─────────────────────────────────────────────────────────────
@@ -161,6 +178,22 @@ REST_FRAMEWORK = {
         'user_search':    '60/min',
         'invite_send':    '30/hour',
         'invite_token':   '30/min',
+        'messages':       '30/min',
+        'phone_code':     '5/hour',
+        'static_map':     '120/min',
+        'friend_requests': '50/day',
+        'rsvp':            '120/hour',     # questions RSVP (organisateur) et réponses
+        'billing':         '30/hour',      # abonnements : sessions Stripe
+        'checkin':         '120/min',      # scanner de tickets à l'entrée
+        'minisite':        '20/hour',      # générations de mini-site (appels aux modèles d'IA)
+        'admin':           '600/min',      # tableau de bord de l'équipe
+        'gifts':           '60/hour',      # billets offerts (création, consultation)
+        'likes':           '120/min',      # « J'aime » (aimer / retirer)
+        'share':           '30/hour',      # partages d'événements à des amis
+        'video':           '20/hour',      # signatures d'envoi de vidéo (Cloudinary)
+        'memories':        '300/hour',     # souvenirs : photos et commentaires
+        'team':            '60/hour',      # équipe : co-organisateurs, photographes, diffusion
+        'baskets':         '120/hour',     # panier : ajouts, paiements
     },
 }
 
@@ -233,6 +266,23 @@ CELERY_BROKER_TRANSPORT_OPTIONS = {'socket_connect_timeout': 2, 'socket_timeout'
 if TESTING:
     CELERY_TASK_ALWAYS_EAGER = True           # tests : tâches exécutées sur place
 
+# WebSocket (messagerie instantanée, badges) : Django Channels via Redis.
+# Servi par le service « realtime » (daphne easevent.asgi:application) derrière /ws/.
+ASGI_APPLICATION = 'easevent.asgi.application'
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {'hosts': [REDIS_URL], 'capacity': 200, 'expiry': 30},
+    }
+}
+if TESTING:
+    CHANNEL_LAYERS = {'default': {'BACKEND': 'channels.layers.InMemoryChannelLayer'}}
+
+# Notifications push (Expo Push → FCM / APNs). EXPO_ACCESS_TOKEN : seulement si
+# « Enhanced push security » est activé dans le compte Expo.
+PUSH_ENABLED = config('PUSH_ENABLED', default=not TESTING, cast=bool)
+EXPO_ACCESS_TOKEN = config('EXPO_ACCESS_TOKEN', default='')
+
 # ─────────────────────────────────────────────────────────────
 # FICHIERS STATIQUES & MÉDIAS
 # ─────────────────────────────────────────────────────────────
@@ -248,6 +298,9 @@ WHITENOISE_ADD_HEADERS_FUNCTION = _static_headers
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 # Django sert /media/ lui-même (photos d'événements) si nginx ne le fait pas
+# Fichiers privés (photos de la messagerie) : servis uniquement par lien signé
+PRIVATE_MEDIA_ROOT = BASE_DIR / 'private_media'
+
 SERVE_MEDIA = config('SERVE_MEDIA', default=True, cast=bool)
 
 # ─────────────────────────────────────────────────────────────
@@ -262,17 +315,17 @@ USE_TZ = True
 # ─────────────────────────────────────────────────────────────
 # EMAIL + CLOUDINARY
 # ─────────────────────────────────────────────────────────────
-EMAIL_BACKEND = config('EMAIL_BACKEND', default='sendgrid_backend.SendgridBackend')
-SENDGRID_API_KEY = config('SENDGRID_API_KEY')
+EMAIL_BACKEND = config('EMAIL_BACKEND', default='easevent.mail.DynamicSendgridBackend')
+# Les clés ci-dessous peuvent aussi être saisies, chiffrées, dans l'administration Django
+# (Clés de service) : elles remplacent alors l'environnement sans redémarrage.
+SENDGRID_API_KEY = config('SENDGRID_API_KEY', default='')
 DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='dosyca35@gmail.com')
 SENDGRID_SANDBOX_MODE_IN_DEBUG = False
 
-cloudinary.config(
-    cloud_name=config('CLOUDINARY_CLOUD_NAME'),
-    api_key=config('CLOUDINARY_API_KEY'),
-    api_secret=config('CLOUDINARY_API_SECRET'),
-    secure=True,
-)
+CLOUDINARY_CLOUD_NAME = config('CLOUDINARY_CLOUD_NAME', default='')
+CLOUDINARY_API_KEY = config('CLOUDINARY_API_KEY', default='')
+CLOUDINARY_API_SECRET = config('CLOUDINARY_API_SECRET', default='')
+cloudinary.config(cloud_name=CLOUDINARY_CLOUD_NAME, api_key=CLOUDINARY_API_KEY, api_secret=CLOUDINARY_API_SECRET, secure=True)
 
 # ─────────────────────────────────────────────────────────────
 # SWAGGER / SPECTACULAR
@@ -285,19 +338,85 @@ STRIPE_WEBHOOK_SECRET  = config('STRIPE_WEBHOOK_SECRET', default='')
 # Commission Easevent prélevée sur chaque ticket payant (en %, ex. 3)
 PLATFORM_FEE_PERCENT   = config('PLATFORM_FEE_PERCENT', default=3, cast=float)
 STRIPE_CONNECT_COUNTRY = config('STRIPE_CONNECT_COUNTRY', default='FR')
+# Mobile Money (Orange Money, MTN MoMo — Cameroun) via Notch Pay : facultatif.
+# Clé publique (Authorization) et clé de hachage des webhooks (tableau de bord Notch Pay › Paramètres).
+NOTCHPAY_PUBLIC_KEY    = config('NOTCHPAY_PUBLIC_KEY', default='')
+NOTCHPAY_HASH_KEY      = config('NOTCHPAY_HASH_KEY', default='')
+NOTCHPAY_API           = config('NOTCHPAY_API', default='https://api.notchpay.co')
+# Abonnements : facultatif. Sans ces variables, les prix sont créés automatiquement
+# dans Stripe au premier achat (9,99 €/mois, 99,90 €/an ; Pro 24,99 €/mois, 249,90 €/an).
+STRIPE_PRICE_STANDARD_MONTHLY = config('STRIPE_PRICE_STANDARD_MONTHLY', default='')
+STRIPE_PRICE_STANDARD_ANNUAL  = config('STRIPE_PRICE_STANDARD_ANNUAL', default='')
+STRIPE_PRICE_PRO_MONTHLY      = config('STRIPE_PRICE_PRO_MONTHLY', default='')
+STRIPE_PRICE_PRO_ANNUAL       = config('STRIPE_PRICE_PRO_ANNUAL', default='')
 
 # ─────────────────────────────────────────────────────────────
 # INVITATIONS (M12, M29–M31)
 # ─────────────────────────────────────────────────────────────
 # Invités par événement selon le plan (cahier des charges §2.5) — None = illimité
 PLAN_GUEST_LIMITS = {'free': 50, 'standard': 500, 'pro': None}
+# Événements créés par mois calendaire selon le plan — None = illimité (events/quota.py)
+PLAN_EVENT_LIMITS = {'free': 1, 'standard': None, 'pro': None}
+
+# ─────────────────────────────────────────────────────────────
+# MINI-SITE IA (minisite/) — 6 propositions par génération
+# ─────────────────────────────────────────────────────────────
+# Générations par événement selon le plan — None = illimité
+MINISITE_GENERATION_LIMITS = {'free': 3, 'standard': 15, 'pro': None}
+MINISITE_ASYNC = config('MINISITE_ASYNC', default=True, cast=bool)    # False : génération dans la requête
+MINISITE_AI_TIMEOUT = config('MINISITE_AI_TIMEOUT', default=40, cast=int)
+# Délai par rôle (secondes) : la rédaction et la critique travaillent sur les 6 propositions à la fois
+MINISITE_REVIEW = config('MINISITE_REVIEW', default=False, cast=bool)    # relecture en plus du directeur de création
+MINISITE_AI_TIMEOUTS = {'direction': 40, 'copy': 70, 'review': 40, 'critic': 70, 'assistant': 20}
+# Clés gratuites : Google AI Studio, Groq, OpenRouter, Mistral (facultatives)
+# Modèles : plusieurs possibles, séparés par des virgules (qualité d'abord, puis secours rapide)
+GEMINI_API_KEY     = config('GEMINI_API_KEY', default='')
+GROQ_API_KEY       = config('GROQ_API_KEY', default='')
+OPENROUTER_API_KEY = config('OPENROUTER_API_KEY', default='')
+MISTRAL_API_KEY    = config('MISTRAL_API_KEY', default='')
+MINISITE_MODELS = {
+    'gemini':     config('MINISITE_GEMINI_MODEL', default='gemini-3.5-flash,gemini-flash-lite-latest'),
+    'groq':       config('MINISITE_GROQ_MODEL', default='llama-3.3-70b-versatile,openai/gpt-oss-120b'),
+    'openrouter': config('MINISITE_OPENROUTER_MODEL', default='meta-llama/llama-3.3-70b-instruct:free'),
+    'mistral':    config('MINISITE_MISTRAL_MODEL', default='mistral-small-latest'),
+}
+# Ordre de priorité par rôle (Mistral : direction artistique seulement, données non sensibles)
+MINISITE_ROLES = {
+    'direction': ('gemini', 'groq', 'openrouter', 'mistral'),
+    'copy':      ('gemini', 'groq', 'openrouter'),
+    'review':    ('groq', 'openrouter', 'gemini'),
+    'critic':    ('groq', 'openrouter', 'gemini'),     # directeur de création : un autre modèle que le rédacteur si possible
+    'assistant': ('groq', 'openrouter', 'gemini'),     # réponses aux questions des participants (messagerie)
+}
+# Journal d'apprentissage (futur modèle Easevent) : une ligne JSON par génération / choix / retouche
+MINISITE_DATASET_ENABLED = config('MINISITE_DATASET_ENABLED', default=True, cast=bool)
+MINISITE_DATASET_DIR = config('MINISITE_DATASET_DIR', default=str(BASE_DIR / 'data' / 'minisite'))
 INVITE_BATCH_MAX     = 100   # adresses / numéros par envoi
 INVITE_REMIND_DELAY_HOURS = 24  # une relance par invité et par jour au plus
+# ── Cartes et adresses (events/geo.py) ─────────────────────────────────
+# Facultative : sans clé, OpenStreetMap (suggestions Photon + carte) est utilisé.
+GOOGLE_MAPS_API_KEY = config('GOOGLE_MAPS_API_KEY', default='')
+
+# ── Application mobile : ouverture depuis un lien, stores ──────────────
+ANDROID_PACKAGE   = config('ANDROID_PACKAGE', default='com.eranis.easevent')
+IOS_BUNDLE_ID     = config('IOS_BUNDLE_ID', default='com.eranis.easevent')
+# Pages des stores (vides tant que l'app n'est pas publiée) et lien direct de l'APK
+ANDROID_STORE_URL = config('ANDROID_STORE_URL', default='')
+IOS_STORE_URL     = config('IOS_STORE_URL', default='')
+APP_DOWNLOAD_URL  = config('APP_DOWNLOAD_URL', default='')
+# Liens https ouverts directement dans l'app (Android App Links / iOS Universal Links)
+ANDROID_CERT_SHA256 = [f.strip() for f in config('ANDROID_CERT_SHA256', default='').split(',') if f.strip()]
+APPLE_TEAM_ID       = config('APPLE_TEAM_ID', default='')
+
+INVITE_WAVE_SIZE    = 20     # invitations par vague d'envoi (worker Celery)
+INVITE_WAVE_SECONDS = 15     # écart entre deux vagues
 
 # SMS via Twilio (API REST). Sans ces variables, les invitations par SMS
 # sont créées mais marquées « canal non configuré ».
 # Clé de chiffrement des numéros (par défaut dérivée de SECRET_KEY)
 PHONE_ENCRYPTION_KEY = config('PHONE_ENCRYPTION_KEY', default='')
+# Chiffrement des clés de service saisies dans l'administration (sinon dérivé de SECRET_KEY)
+KEYS_ENCRYPTION_KEY = config('KEYS_ENCRYPTION_KEY', default='')
 
 TWILIO_ACCOUNT_SID          = config('TWILIO_ACCOUNT_SID', default='')
 TWILIO_AUTH_TOKEN           = config('TWILIO_AUTH_TOKEN', default='')

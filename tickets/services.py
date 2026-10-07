@@ -4,6 +4,7 @@ tickets/services.py
 Règles métier des tickets (MVP §5). Toutes les vues passent par ici.
 ═══════════════════════════════════════════════════════════════
 """
+from events.wording import pass_word
 from datetime import timedelta
 
 from django.db import IntegrityError, transaction
@@ -37,13 +38,15 @@ def can_access_event(event, user):
     """Public publié, ou privé avec une invitation valide, ou organisateur."""
     if event.deleted_at is not None:
         return False
-    if event.organizer_id == user.id:
+    from events.team import role_of
+    if role_of(event, user):
         return True
     if event.status != 'published':
         return False
     if event.visibility == 'public':
         return True
-    return event.invitations.filter(invited_user=user).exclude(status__in=['revoked', 'expired']).exists()
+    return event.invitations.filter(invited_user=user, expires_at__gt=timezone.now()) \
+        .exclude(status__in=['revoked', 'expired']).exists()
 
 
 def active_ticket(event, user):
@@ -89,6 +92,21 @@ def create_pending_ticket(event, user, invitation=None):
     return ticket, True
 
 
+def ensure_still_accessible(ticket):
+    """
+    Avant de valider ou de payer un ticket en attente : l'événement doit
+    toujours exister, être publié, accessible (invitation non retirée pour
+    un événement privé) et ne pas être terminé.
+    """
+    event = ticket.event
+    if event.deleted_at is not None:
+        raise TicketError("Cet événement a été annulé par l'organisateur.", 'event_cancelled', 410)
+    if event.end_date and event.end_date < timezone.now():
+        raise TicketError('Cet événement est terminé.', 'event_ended')
+    if not can_access_event(event, ticket.user):
+        raise TicketError("Cet événement n'est plus accessible.", 'forbidden', 403)
+
+
 def generate_ticket(ticket, payment_status):
     """
     pending → generated. La place est vérifiée à ce moment-là, sous verrou
@@ -121,19 +139,39 @@ def generate_ticket(ticket, payment_status):
                 status='confirmed', responded_at=timezone.now())
 
         from notifications.models import Notification
-        from notifications.services import notify_on_commit
+        from notifications.services import notify_event_full, notify_guest_activity, notify_on_commit
         paid = payment_status == Ticket.PaymentStatus.PAID
+        # Organisateur : nouveau participant (réponses groupées) et « Complet ! »
+        guest, kind = ticket.user, ('paid' if paid else ('accepted' if ticket.invitation_id else 'joined'))
+        if not ticket.invitation_id or paid:
+            transaction.on_commit(lambda: notify_guest_activity(event, guest, kind))
+        if event.max_guests and generated_count(event) >= event.max_guests:
+            transaction.on_commit(lambda: notify_event_full(event))
+        w = pass_word(event)
         notify_on_commit(
-            ticket.user, Notification.Type.TICKET_GENERATED, 'Ticket généré',
+            ticket.user, Notification.Type.TICKET_GENERATED, f"{w['One']} générée" if w['e'] else f"{w['One']} généré",
             f"pour {event.title}{' · paiement reçu' if paid else ''}. Présentez le QR code à l'entrée.",
             event=event, ticket=ticket, dedupe_key=f'ticket-generated:{ticket.id}',
         )
+        # Panier en cours : le nouveau participant en est prévenu
+        from baskets.services import announce
+        transaction.on_commit(lambda: announce(event, guest))
+        if ticket.invitation_id:
+            from django.db import transaction as _tx
+            from messaging.services import record_invitation_event
+            invitation = ticket.invitation
+            _tx.on_commit(lambda: record_invitation_event(invitation, 'ticket_generated'))
     return ticket
 
 
 def validate_free_ticket(ticket):
+    if ticket.status == Ticket.Status.GENERATED:
+        return ticket
+    if ticket.status != Ticket.Status.PENDING:
+        raise TicketError("Ce ticket n'est plus valable.", 'not_pending')
     if not ticket.is_free:
         raise TicketError('Ce ticket est payant : réglez-le pour le générer.', 'payment_required', 402)
+    ensure_still_accessible(ticket)
     return generate_ticket(ticket, Ticket.PaymentStatus.NOT_REQUIRED)
 
 

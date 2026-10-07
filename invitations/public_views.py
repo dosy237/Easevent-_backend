@@ -44,6 +44,9 @@ def _state_error(inv):
         return ('Invitation annulée', "L'organisateur a annulé cette invitation.", 'revoked')
     if inv.status == 'expired' or inv.expires_at <= timezone.now():
         return ('Invitation expirée', "Cet événement est terminé : l'invitation n'est plus valable.", 'expired')
+    if inv.event.status != 'published':
+        return ('Invitation pas encore disponible',
+                "L'organisateur prépare encore cet événement. Réessayez un peu plus tard.", 'not_published')
     return None
 
 
@@ -65,6 +68,12 @@ def _decline(inv):
                 pass
         inv.status, inv.responded_at = 'declined', timezone.now()
         inv.save(update_fields=['status', 'responded_at', 'updated_at'])
+    # Organisateur prévenu (réponses groupées), et fil de la conversation pour un membre
+    from notifications.services import notify_guest_activity
+    notify_guest_activity(inv.event, inv.invited_user, 'declined', name=inv.contact_name or inv.email or None)
+    if inv.invited_user_id:
+        from messaging.services import record_invitation_event
+        record_invitation_event(inv, 'invitation_declined')
 
 
 def _payload(inv, request):
@@ -219,17 +228,82 @@ def invitation_page(request, token):
             'organizer': event.organizer,
             'organizer_initials': initials(event.organizer.first_name, event.organizer.last_name),
             'cover_url': public_url(event.cover_image, request) if event.cover_image else '',
-            'date': fr_datetime(event.start_date),
+            'date': fr_datetime(event.start_date, event),
             'location': 'En ligne' if event.is_online else (event.location_address or ''),
             'price': price_label(event),
             'deeplink': f'easevent://i/{token}',
             'declined': declined or inv.status == 'declined',
+            **_app_links(request, token),
         })
     # Le jeton est dans l'URL : ne jamais le transmettre à un autre site
     response['Referrer-Policy'] = 'same-origin'
     response['X-Robots-Tag'] = 'noindex, nofollow'
     response['Cache-Control'] = 'no-store'
     return response
+
+
+def _platform(request):
+    ua = request.META.get('HTTP_USER_AGENT', '').lower()
+    if 'android' in ua:
+        return 'android'
+    if any(k in ua for k in ('iphone', 'ipad', 'ipod')):
+        return 'ios'
+    return 'other'
+
+
+def _app_links(request, token):
+    """
+    Ouvrir l'application si elle est installée, sinon proposer le store.
+    Android : lien « intent » (Chrome ouvre l'app, sinon le store). Le jeton
+    est transmis au Play Store (paramètre referrer) : l'app le relit à son
+    premier lancement et ouvre directement l'invitation.
+    iOS : tentative easevent:// puis App Store.
+    """
+    from urllib.parse import quote
+    from django.conf import settings
+
+    platform = _platform(request)
+    android_store = settings.ANDROID_STORE_URL
+    if android_store:
+        sep = '&' if '?' in android_store else '?'
+        android_store = f"{android_store}{sep}referrer={quote(f'invite={token}', safe='')}"
+    store_url = {'android': android_store, 'ios': settings.IOS_STORE_URL}.get(platform, '') or settings.APP_DOWNLOAD_URL
+    open_url = f'easevent://i/{token}'
+    if platform == 'android':
+        fallback = store_url or request.build_absolute_uri(f'/i/{token}/?app=absente')
+        open_url = (f'intent://i/{token}#Intent;scheme=easevent;package={settings.ANDROID_PACKAGE};'
+                    f"S.browser_fallback_url={quote(fallback, safe='')};end")
+    return {
+        'platform': platform,
+        'open_url': open_url,
+        'store_url': store_url,
+        'auto_open': platform in ('android', 'ios') and request.method == 'GET' and request.GET.get('app') != 'absente',
+        'app_missing': request.GET.get('app') == 'absente',
+    }
+
+
+def assetlinks(request):
+    """/.well-known/assetlinks.json : les liens https://…/i/ s'ouvrent directement dans l'app Android."""
+    from django.conf import settings
+    from django.http import Http404, JsonResponse
+    if not settings.ANDROID_CERT_SHA256:
+        raise Http404
+    return JsonResponse([{
+        'relation': ['delegate_permission/common.handle_all_urls'],
+        'target': {'namespace': 'android_app', 'package_name': settings.ANDROID_PACKAGE,
+                   'sha256_cert_fingerprints': settings.ANDROID_CERT_SHA256},
+    }], safe=False)
+
+
+def apple_app_site_association(request):
+    """/.well-known/apple-app-site-association : Universal Links iOS."""
+    from django.conf import settings
+    from django.http import Http404, JsonResponse
+    if not settings.APPLE_TEAM_ID:
+        raise Http404
+    return JsonResponse({'applinks': {'apps': [], 'details': [{
+        'appID': f'{settings.APPLE_TEAM_ID}.{settings.IOS_BUNDLE_ID}', 'paths': ['/i/*', '/e/*'],
+    }]}})
 
 
 def privacy_page(request):

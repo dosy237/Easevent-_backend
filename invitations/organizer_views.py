@@ -44,11 +44,11 @@ EXPORT_PLANS = ('standard', 'pro')
 
 
 def _own_event(request, event_id):
-    try:
-        return Event.objects.select_related('organizer').get(
-            id=event_id, organizer=request.user, deleted_at__isnull=True)
-    except Event.DoesNotExist:
+    from events.team import managed_event
+    event = managed_event(request.user, event_id)
+    if event is None:
         raise Http404
+    return event
 
 
 def _error(exc):
@@ -69,7 +69,11 @@ def invite(request, event_id):
     Compatibilité : { email } ou { phone_number } (un seul invité).
     """
     event = _own_event(request, event_id)
-    data = request.data
+    data = request.data if isinstance(request.data, dict) else {}
+    if event.status != 'published':
+        # Une invitation ouvre l'événement à l'invité : il doit être publié (public ou privé)
+        return Response({'detail': "Publiez l'événement avant d'inviter : vos invités pourront alors l'ouvrir.",
+                         'code': 'event_not_published'}, status=status.HTTP_409_CONFLICT)
 
     def as_list(key):
         value = data.get(key)
@@ -103,10 +107,16 @@ def _guest_rows(event):
 
     invitations = list(event.invitations.exclude(status='revoked')
                        .select_related('invited_user').order_by('-sent_at'))
-    user_ids = [inv.invited_user_id for inv in invitations if inv.invited_user_id]
+    invited_ids = {inv.invited_user_id for inv in invitations if inv.invited_user_id}
+    # Participants venus d'eux-mêmes (événement public) : ticket sans invitation
+    walk_ins = list(Ticket.objects.select_related('user').filter(event=event, status__in=Ticket.ACTIVE)
+                    .exclude(user_id__in=invited_ids).order_by('-created_at'))
+    user_ids = list(invited_ids) + [t.user_id for t in walk_ins]
     tickets = {t.user_id: t for t in Ticket.objects.filter(
-        event=event, user_id__in=user_ids, status__in=Ticket.ACTIVE)}
+        event=event, user_id__in=list(invited_ids), status__in=Ticket.ACTIVE)}
     now = timezone.now()
+    from rsvp.services import answers_by_user
+    rsvp = answers_by_user(event, user_ids)
 
     rows, counts = [], {'confirmed': 0, 'pending': 0, 'declined': 0, 'total': 0}
     for inv in invitations:
@@ -146,14 +156,34 @@ def _guest_rows(event):
             'delivery_status': inv.delivery_status,
             'ticket_status':   ticket.status if ticket else None,
             'payment_status':  ticket.payment_status if ticket else None,
+            'checked_in_at':   ticket.checked_in_at.isoformat() if ticket and ticket.checked_in_at else None,
             'sent_at':         inv.sent_at.isoformat() if inv.sent_at else None,
             'opened_at':       inv.opened_at.isoformat() if inv.opened_at else None,
             'responded_at':    inv.responded_at.isoformat() if inv.responded_at else None,
             'reminded_at':     inv.reminded_at.isoformat() if inv.reminded_at else None,
             'can_remind':      can_remind(inv, now),
+            'rsvp':            rsvp.get(inv.invited_user_id, []),       # réponses aux questions (M19)
             # Compatibilité avec l'ancien écran (E08)
             'user': ({'id': str(user.id), 'first_name': user.first_name, 'last_name': user.last_name,
                       'avatar_url': user.avatar_url} if user else {'email': inv.email or '', 'phone_number': mask_phone(phone)}),
+        })
+    for t in walk_ins:
+        user = t.user
+        display = 'confirmed' if t.status == Ticket.Status.GENERATED else 'to_validate'
+        bucket = 'confirmed' if display == 'confirmed' else 'pending'
+        counts['total'] += 1
+        counts[bucket] += 1
+        rows.append({
+            'id': f'ticket-{t.id}', 'source': 'ticket', 'status': 'confirmed', 'display_status': display,
+            'bucket': bucket, 'kind': 'member', 'channel': 'public',
+            'name': user.full_name, 'initials': initials(user.first_name, user.last_name),
+            'avatar_url': user.avatar_url, 'user_id': str(user.id), 'email': '', 'phone': '',
+            'delivery_status': 'in_app', 'ticket_status': t.status, 'payment_status': t.payment_status,
+            'checked_in_at': t.checked_in_at.isoformat() if t.checked_in_at else None,
+            'sent_at': None, 'opened_at': None, 'responded_at': t.created_at.isoformat(), 'reminded_at': None,
+            'can_remind': False, 'rsvp': rsvp.get(user.id, []),
+            'user': {'id': str(user.id), 'first_name': user.first_name, 'last_name': user.last_name,
+                     'avatar_url': user.avatar_url},
         })
     return rows, counts
 
@@ -186,8 +216,11 @@ def participants(request, event_id):
 def remind_one(request, invitation_id):
     try:
         inv = Invitation.objects.select_related('event', 'event__organizer', 'invited_user').get(
-            id=invitation_id, event__organizer=request.user, event__deleted_at__isnull=True)
-    except Invitation.DoesNotExist:
+            id=invitation_id, event__deleted_at__isnull=True)
+    except (Invitation.DoesNotExist, ValueError):
+        raise Http404
+    from events.team import is_manager
+    if not is_manager(inv.event, request.user):
         raise Http404
     if not can_remind(inv):
         if inv.status not in ('sent', 'opened'):
@@ -229,7 +262,7 @@ def remind_pending(request, event_id):
 @permission_classes([IsAuthenticated])
 def export_link(request, event_id):
     event = _own_event(request, event_id)
-    if request.user.subscription_plan not in EXPORT_PLANS:
+    if event.organizer.subscription_plan not in EXPORT_PLANS:
         return Response({'detail': "L'export de la liste des invités est inclus dans le plan Standard.",
                          'code': 'plan_required'}, status=status.HTTP_403_FORBIDDEN)
     token = signing.dumps({'e': str(event.id), 'u': str(request.user.id)}, salt=EXPORT_SALT, compress=True)
@@ -244,27 +277,36 @@ STATUS_LABELS = {
 
 
 def export_csv(request, token):
+    from events.team import managed_event
+    from users.models import User
     try:
         data = signing.loads(token, salt=EXPORT_SALT, max_age=EXPORT_TTL)
-        event = Event.objects.select_related('organizer').get(
-            id=data['e'], organizer_id=data['u'], deleted_at__isnull=True)
-    except (signing.BadSignature, KeyError, Event.DoesNotExist):
+        event = managed_event(User.objects.get(pk=data['u']), data['e'])
+    except (signing.BadSignature, KeyError, User.DoesNotExist, ValueError):
         raise Http404
+    if event is None:
+        raise Http404
+    if event.organizer.subscription_plan not in EXPORT_PLANS:
+        raise Http404                        # abonnement arrêté depuis la création du lien
     rows, _ = _guest_rows(event)
     buf = io.StringIO()
     writer = csv.writer(buf, delimiter=';')
-    writer.writerow(['Nom', 'Email', 'Téléphone', 'Canal', 'Statut', 'Invité le', 'Répondu le'])
-
     def safe(value):
         # Neutralise les formules à l'ouverture dans un tableur (injection CSV)
         value = str(value or '')
         return "'" + value if value[:1] in ('=', '+', '-', '@', '\t', '\r') else value
 
+    questions = list(event.rsvp_questions.all())
+    writer.writerow(['Nom', 'Email', 'Téléphone', 'Canal', 'Statut', 'Invité le', 'Répondu le']
+                    + [safe(q.label) for q in questions])
+
     for r in rows:
         writer.writerow([safe(r['name']), safe(r['email']), safe(r['phone']),
                          {'member': 'Membre', 'email': 'Email', 'phone': 'SMS'}[r['kind']],
                          STATUS_LABELS.get(r['display_status'], r['display_status']),
-                         (r['sent_at'] or '')[:10], (r['responded_at'] or '')[:10]])
+                         (r['sent_at'] or '')[:10], (r['responded_at'] or '')[:10]]
+                        + [safe(next((x['display'] for x in r['rsvp'] if x['question_id'] == str(q.id)), ''))
+                           for q in questions])
     response = HttpResponse('﻿' + buf.getvalue(), content_type='text/csv; charset=utf-8')
     response['Content-Disposition'] = f'attachment; filename="invites-{str(event.id)[:8]}.csv"'
     response['Cache-Control'] = 'no-store'
@@ -296,12 +338,16 @@ def search_users(request):
     event_id = request.query_params.get('event')
     if event_id:
         try:
+            from events.team import managers_q
             invited = set(Invitation.objects.filter(
-                event_id=event_id, event__organizer=request.user, invited_user__in=users,
+                event_id=event_id, event__in=Event.objects.filter(managers_q(request.user)), invited_user__in=users,
             ).exclude(status='revoked').values_list('invited_user_id', flat=True))
         except Exception:
             invited = set()
+    from social.services import status_for
+    friendship = status_for(request.user, [u.id for u in users])
     return Response({'results': [{
+        'friend_status':  friendship.get(u.id),
         'id':             str(u.id),
         'first_name':     u.first_name,
         'last_name':      u.last_name,

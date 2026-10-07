@@ -25,6 +25,7 @@
 # ─────────────────────────────────────────────────────────────────
 import math
 import secrets
+import uuid
 from datetime import datetime
 
 # ─────────────────────────────────────────────────────────────────
@@ -87,11 +88,15 @@ def liste_evenements_publics(request):
     Retourne la liste des événements publiés et non supprimés.
     Filtres possibles : type, date, recherche par titre.
     """
+    from django.db.models import Count, Exists, OuterRef
+    from .models import EventLike
     evenements = Event.objects.select_related('organizer').filter(
         status             = 'published',
         visibility         = 'public',
         deleted_at__isnull = True
-    ).order_by('-start_date')
+    ).annotate(likes_n=Count('likes', distinct=True)).order_by('-start_date')
+    if request.user.is_authenticated:
+        evenements = evenements.annotate(liked_by_me=Exists(EventLike.objects.filter(event=OuterRef('pk'), user=request.user)))
 
     # Filtre par type
     event_type = request.query_params.get('type')
@@ -136,30 +141,21 @@ def detail_evenement_public(request, event_id):
         )
 
     # ── Contrôle d'accès pour les événements privés ───────────────
+    # Organisateur, ou invitation valide (non retirée, non expirée) — même règle que les tickets
     if event.visibility == 'private':
-        # Un visiteur non connecté ne peut jamais voir un événement privé
         if not request.user.is_authenticated:
             return Response(
-                {'error': 'Cet événement est privé. Vous devez être invité pour y accéder.'},
+                {'error': 'Cet événement est privé. Vous devez être invité pour y accéder.', 'code': 'private'},
                 status=status.HTTP_403_FORBIDDEN
             )
-
-        # L'organisateur a toujours accès à son propre événement
-        is_organizer = (event.organizer == request.user)
-
-        if not is_organizer:
-            # Vérifier qu'il y a une invitation valide pour cet utilisateur
-            from invitations.models import Invitation
-            has_invitation = Invitation.objects.filter(
-                event        = event,
-                invited_user = request.user,
-            ).exclude(status__in=['revoked', 'expired']).exists()
-
-            if not has_invitation:
-                return Response(
-                    {'error': 'Cet événement est privé. Vous n\'avez pas été invité.'},
-                    status=status.HTTP_403_FORBIDDEN
-                )
+        from tickets.models import Ticket
+        from tickets.services import can_access_event
+        has_ticket = Ticket.objects.filter(event=event, user=request.user, status__in=Ticket.ACTIVE).exists()
+        if not (can_access_event(event, request.user) or has_ticket):
+            return Response(
+                {'error': 'Cet événement est privé. Vous n\'avez pas été invité.', 'code': 'private'},
+                status=status.HTTP_403_FORBIDDEN
+            )
 
     serializer = EventPublicSerializer(event, context={'request': request, 'with_my_ticket': True})
     return Response(serializer.data)
@@ -176,15 +172,21 @@ def mes_evenements(request):
     Retourne tous les événements créés par l'utilisateur connecté.
     Inclut les brouillons, publiés et archivés.
     """
+    from .models import EventCollaborator
+    roles = dict(EventCollaborator.objects.filter(user=request.user, status='accepted')
+                 .values_list('event_id', 'role'))
     evenements = Event.objects.select_related('organizer').filter(
-        organizer          = request.user,
+        Q(organizer=request.user) | Q(id__in=list(roles)),
         deleted_at__isnull = True,
     ).order_by('-created_at')
 
-    serializer = EventPublicSerializer(evenements, many=True, context={'request': request})
+    data = EventPublicSerializer(evenements, many=True, context={'request': request}).data
+    for item in data:
+        # Rôle de l'utilisateur : organisateur, co-organisateur ou photographe
+        item['my_role'] = roles.get(uuid.UUID(str(item['id'])), 'organizer')
     return Response({
-        'count':  evenements.count(),
-        'events': serializer.data,
+        'count':  len(data),
+        'events': data,
     })
 
 
@@ -210,22 +212,30 @@ def upload_image(request):
         "name":  "cover"  ← identifiant de l'image (cover, gallery_1, gallery_2)
     }
     """
-    image_data = request.data.get('image')
-    image_name = request.data.get('name', 'event_image')
+    import re
+    import uuid as _uuid
+    data = request.data if isinstance(request.data, dict) else {}
+    image_data = data.get('image')
+    image_name = re.sub(r'[^a-z0-9_-]', '', str(data.get('name') or 'image').lower())[:30] or 'image'
 
-    if not image_data:
-        return Response(
-            {'detail': 'Aucune image fournie.'},
-            status=status.HTTP_400_BAD_REQUEST
-        )
+    # Uniquement une image encodée (jamais une URL : Cloudinary irait la chercher), 10 Mo au plus
+    if not isinstance(image_data, str) or not re.match(r'^data:image/(jpeg|jpg|png|webp|heic|heif|gif);base64,', image_data):
+        return Response({'detail': 'Aucune image valide fournie.'}, status=status.HTTP_400_BAD_REQUEST)
+    if len(image_data) > 14_000_000:
+        return Response({'detail': 'Image trop lourde (10 Mo maximum).'}, status=status.HTTP_400_BAD_REQUEST)
 
+    folder = 'avatars' if image_name == 'avatar' else 'events'
     try:
+        from adminpanel.keys import apply_cloudinary
+        apply_cloudinary()
         result = cloudinary.uploader.upload(
             image_data,
-            folder         = f'easevent/events/{request.user.id}',
-            public_id      = f'{image_name}_{request.user.id}',
-            overwrite      = True,
-            transformation = [{'width': 1920, 'crop': 'limit', 'quality': 'auto'}]
+            folder         = f'easevent/{folder}/{request.user.id}',
+            # Nom unique : une nouvelle photo ne remplace jamais celle d'un autre événement
+            public_id      = f'{image_name}_{_uuid.uuid4().hex[:16]}',
+            overwrite      = False,
+            transformation = [{'width': 1920, 'crop': 'limit', 'quality': 'auto', 'fetch_format': 'auto'}]
+            if folder == 'events' else [{'width': 512, 'height': 512, 'crop': 'fill', 'gravity': 'face', 'quality': 'auto'}],
         )
         return Response({
             'url':       result['secure_url'],
@@ -265,38 +275,13 @@ def creer_evenement(request):
         "visibility":       "public"
     }
     """
-    data = request.data
-
-    # ── Validation des champs obligatoires ───────────────────────
-    required = ['title', 'event_type', 'start_date', 'end_date']
-    for field in required:
-        if not data.get(field):
-            return Response(
-                {'detail': f'Le champ "{field}" est obligatoire.'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-    # ── Conversion des dates ISO → objets datetime Python ────────
-    # parse_datetime("2026-09-15T18:00:00") → datetime(2026, 9, 15, 18, 0, 0)
-    # Sans cette conversion Django plante avec "'str' object has no attribute 'day'"
-    start_date_parsed = parse_datetime(data['start_date'])
-    end_date_parsed   = parse_datetime(data['end_date'])
-
-    if not start_date_parsed:
-        return Response(
-            {'detail': 'Format de date de début invalide. Utilisez YYYY-MM-DDTHH:MM:SS'},
-            status=status.HTTP_400_BAD_REQUEST
-        )
-    if not end_date_parsed:
-        return Response(
-            {'detail': 'Format de date de fin invalide. Utilisez YYYY-MM-DDTHH:MM:SS'},
-            status=status.HTTP_400_BAD_REQUEST
-        )
-    if end_date_parsed <= start_date_parsed:
-        return Response(
-            {'detail': 'La date de fin doit être après la date de début.'},
-            status=status.HTTP_400_BAD_REQUEST
-        )
+    data = request.data if isinstance(request.data, dict) else {}
+    from .validation import EventInputError, clean_core
+    try:
+        core = clean_core(data)
+    except EventInputError as exc:
+        return Response({'detail': exc.message, **({exc.field: exc.message} if exc.field else {})},
+                        status=status.HTTP_400_BAD_REQUEST)
 
     if data.get('event_type') not in Event.EventType.values:
         return Response({'detail': "Type d'événement invalide."}, status=status.HTTP_400_BAD_REQUEST)
@@ -314,49 +299,68 @@ def creer_evenement(request):
         first = next(iter(ticket_errors.values()))
         return Response({'detail': first, **ticket_errors}, status=status.HTTP_400_BAD_REQUEST)
 
+    # ── Vidéo de présentation (événements publics, 45 s au plus) ──
+    from . import video as event_video
+    if data.get('video'):
+        if visibility != 'public':
+            return Response({'detail': 'La vidéo est réservée aux événements publics.', 'code': 'video_public_only'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        try:
+            ticketing.update(event_video.attach(None, request.user, data['video']))
+        except event_video.VideoError as exc:
+            return Response({'detail': exc.message, 'code': exc.code}, status=status.HTTP_400_BAD_REQUEST)
+
     # ── Génération du subdomain unique ───────────────────────────
     # slugify("Mon Mariage 2026") → "mon-mariage-2026"
     # On ajoute un compteur si le slug existe déjà
-    base_slug = slugify(data.get('title', ''))[:80]
+    base_slug = slugify(core['title'])[:80] or 'evenement'
     subdomain = base_slug
     counter   = 1
     while Event.objects.filter(subdomain=subdomain).exists():
         subdomain = f"{base_slug}-{counter}"
         counter  += 1
 
+    from django.db import transaction
+    from users.models import User
+    from . import quota as plan_quota
     try:
-        event = Event.objects.create(
-            organizer        = request.user,
-            title            = str(data['title']).strip()[:100],
-            event_type       = data['event_type'],
-            description      = data.get('description', ''),
-            start_date       = start_date_parsed,
-            end_date         = end_date_parsed,
-            location_address = data.get('location_address', ''),
-            latitude         = data.get('latitude'),
-            longitude        = data.get('longitude'),
-            is_online        = data.get('is_online', False),
-            online_link      = data.get('online_link'),
-            cover_image      = data.get('cover_image'),
-            visibility       = visibility,
-            status           = 'draft',  # Toujours brouillon à la création
-            subdomain        = subdomain,
-            template_config  = data.get('template_config'),
-            **ticketing,
-        )
+        with transaction.atomic():
+            # Verrou sur l'organisateur : deux créations simultanées ne dépassent pas le quota
+            User.objects.select_for_update().only('id').get(pk=request.user.pk)
+            plan_quota.check_create(request.user)
+            event = Event.objects.create(
+                organizer        = request.user,
+                event_type       = data['event_type'],
+                visibility       = visibility,
+                status           = 'draft',  # Toujours brouillon à la création
+                subdomain        = subdomain,
+                **core,
+                **ticketing,
+            )
 
         serializer = EventPublicSerializer(event, context={'request': request})
         return Response({
             'message': 'Événement créé avec succès.',
+            'quota':   plan_quota.usage(request.user),
             'event':   serializer.data,
         }, status=status.HTTP_201_CREATED)
 
+    except plan_quota.QuotaError as exc:
+        return Response(exc.payload(), status=status.HTTP_403_FORBIDDEN)
     except Exception:
         logger.exception("Erreur lors de la création d'un événement")
         return Response(
             {'detail': "Impossible de créer l'événement pour le moment. Réessayez."},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def quota_evenements(request):
+    """GET /api/events/quota/ — événements restants ce mois-ci selon le plan."""
+    from .quota import usage
+    return Response(usage(request.user))
 
 
 # ════════════════════════════════════════════════════════════════
@@ -370,13 +374,9 @@ def detail_evenement_organisateur(request, event_id):
     Retourne le détail complet d'un événement pour son organisateur.
     Inclut les statistiques des invitations par statut.
     """
-    try:
-        event = Event.objects.get(
-            id                 = event_id,
-            organizer          = request.user,
-            deleted_at__isnull = True,
-        )
-    except Event.DoesNotExist:
+    from .team import managed_event
+    event = managed_event(request.user, event_id)
+    if event is None:
         return Response(
             {'detail': 'Événement introuvable.'},
             status=status.HTTP_404_NOT_FOUND
@@ -390,9 +390,13 @@ def detail_evenement_organisateur(request, event_id):
         'total':     event.invitations.exclude(status='revoked').count(),
     }
 
+    from .team import role_of
     serializer = EventPublicSerializer(event, context={'request': request})
     return Response({
-        'event':       serializer.data,
+        'my_role':     role_of(event, request.user),
+        # template_config (galerie…) : réservé à l'organisateur, pour l'écran « Modifier »
+        'event':       {**serializer.data, 'template_config': event.template_config or {},
+                        'video_public_id': event.video_public_id},
         'invitations': invitations_count,
     })
 
@@ -409,41 +413,31 @@ def modifier_evenement(request, event_id):
     PATCH = mise à jour partielle : on n'envoie que les champs à modifier.
     Seul l'organisateur peut modifier son événement.
     """
-    try:
-        event = Event.objects.get(
-            id                 = event_id,
-            organizer          = request.user,
-            deleted_at__isnull = True,
-        )
-    except Event.DoesNotExist:
+    from .team import managed_event
+    event = managed_event(request.user, event_id)
+    if event is None:
         return Response(
             {'detail': 'Événement introuvable.'},
             status=status.HTTP_404_NOT_FOUND
         )
 
-    data = request.data
-
-    # Mise à jour uniquement des champs présents dans la requête
-    if 'title'            in data: event.title            = data['title']
-    if 'description'      in data: event.description      = data['description']
-    if 'event_type'       in data: event.event_type       = data['event_type']
-    if 'location_address' in data: event.location_address = data['location_address']
-    if 'is_online'        in data: event.is_online        = data['is_online']
-    if 'online_link'      in data: event.online_link      = data['online_link']
-    if 'cover_image'      in data: event.cover_image      = data['cover_image']
-    if 'visibility'       in data:
+    data = request.data if isinstance(request.data, dict) else {}
+    from .lifecycle import notify_changes, snapshot
+    from .validation import EventInputError, clean_core
+    try:
+        core = clean_core(data, current=event)
+    except EventInputError as exc:
+        return Response({'detail': exc.message, **({exc.field: exc.message} if exc.field else {})},
+                        status=status.HTTP_400_BAD_REQUEST)
+    before = snapshot(event)
+    for field, value in core.items():
+        setattr(event, field, value)
+    if 'event_type' in data:
+        event.event_type = data['event_type']
+    if 'visibility' in data:
         if data['visibility'] not in VISIBILITIES:
             return Response({'detail': 'Visibilité invalide (public ou private).'}, status=status.HTTP_400_BAD_REQUEST)
         event.visibility = data['visibility']
-    if 'template_config'  in data: event.template_config  = data['template_config']
-
-    if 'start_date' in data:
-        parsed = parse_datetime(data['start_date'])
-        if parsed: event.start_date = parsed
-
-    if 'end_date' in data:
-        parsed = parse_datetime(data['end_date'])
-        if parsed: event.end_date = parsed
 
     # Billetterie & dress code, type libre et palette
     if 'event_type' in data and data['event_type'] not in Event.EventType.values:
@@ -458,11 +452,26 @@ def modifier_evenement(request, event_id):
     for field, value in ticketing.items():
         setattr(event, field, value)
 
+    # Vidéo : ajouter, remplacer, changer la légende ou retirer (null)
+    if 'video' in data:
+        from . import video as event_video
+        if data['video'] and event.visibility != 'public':
+            return Response({'detail': 'La vidéo est réservée aux événements publics.', 'code': 'video_public_only'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        try:
+            for field, value in event_video.attach(event, request.user, data['video']).items():
+                setattr(event, field, value)
+        except event_video.VideoError as exc:
+            return Response({'detail': exc.message, 'code': exc.code}, status=status.HTTP_400_BAD_REQUEST)
+
     event.save()
+    # Date, heure ou lieu modifiés : les participants sont prévenus
+    notified = notify_changes(event, before)
 
     serializer = EventPublicSerializer(event, context={'request': request})
     return Response({
         'message': 'Événement modifié avec succès.',
+        'notified': notified,
         'event':   serializer.data,
     })
 
@@ -485,13 +494,9 @@ def publier_evenement(request, event_id):
     - L'événement disparaît du fil public
     - Les invitations existantes restent actives
     """
-    try:
-        event = Event.objects.get(
-            id                 = event_id,
-            organizer          = request.user,
-            deleted_at__isnull = True,
-        )
-    except Event.DoesNotExist:
+    from .team import managed_event
+    event = managed_event(request.user, event_id)
+    if event is None:
         return Response(
             {'detail': 'Événement introuvable.'},
             status=status.HTTP_404_NOT_FOUND
@@ -499,6 +504,13 @@ def publier_evenement(request, event_id):
 
     # ── Dépublication ─────────────────────────────────────────────
     if event.status == 'published':
+        from tickets.models import Ticket
+        if Ticket.objects.filter(event=event, status=Ticket.Status.GENERATED).exists():
+            # Des participants ont déjà leur ticket : dépublier les priverait d'accès sans les prévenir
+            return Response({
+                'detail': "Des participants ont déjà leur invitation ou leur billet : vous ne pouvez plus dépublier cet événement. "
+                          "Modifiez-le, ou supprimez-le pour l'annuler (les participants seront prévenus et remboursés).",
+                'code': 'has_participants'}, status=status.HTTP_409_CONFLICT)
         event.status = 'draft'
         event.save()
         return Response({
@@ -519,8 +531,19 @@ def publier_evenement(request, event_id):
             status=status.HTTP_400_BAD_REQUEST
         )
 
+    data = request.data if isinstance(request.data, dict) else {}
+    visibility = data.get('visibility', event.visibility)
+    if visibility not in VISIBILITIES:
+        return Response({'detail': 'Visibilité invalide (public ou private).'}, status=status.HTTP_400_BAD_REQUEST)
+    from .quota import QuotaError, check_publish
+    try:
+        check_publish(event)
+    except QuotaError as exc:
+        return Response(exc.payload(), status=status.HTTP_403_FORBIDDEN)
     event.status     = 'published'
-    event.visibility = request.data.get('visibility', event.visibility)
+    event.visibility = visibility
+    if not event.published_at:
+        event.published_at = timezone.now()
     event.save()
 
     # Par celui-ci :
@@ -564,11 +587,16 @@ def supprimer_evenement(request, event_id):
             status=status.HTTP_404_NOT_FOUND
         )
 
-    event.deleted_at = timezone.now()
-    event.status     = 'archived'
-    event.save()
-
-    return Response({'message': 'Événement supprimé avec succès.'})
+    # Tickets annulés (remboursés s'ils étaient payés), invitations retirées, participants prévenus
+    from .lifecycle import cancel_event
+    result = cancel_event(event)
+    message = 'Événement supprimé.'
+    if result['notified']:
+        message += f" {result['notified']} participant{'s' if result['notified'] > 1 else ''} prévenu{'s' if result['notified'] > 1 else ''}."
+    if result['refunds_failed']:
+        message += (f" {result['refunds_failed']} remboursement(s) n'ont pas pu être faits automatiquement : "
+                    "faites-les depuis votre tableau de bord Stripe.")
+    return Response({'message': message, **result})
 
 
 # Les invités (participants, invitations, relances) sont gérés dans
@@ -590,9 +618,10 @@ def revoquer_invitation(request, invitation_id):
     from invitations.models import Invitation
 
     try:
-        invitation = Invitation.objects.get(
+        invitation = Invitation.objects.select_related('event', 'invited_user').get(
             id               = invitation_id,
             event__organizer = request.user,  # vérifie que c'est bien son événement
+            event__deleted_at__isnull = True,
         )
     except Invitation.DoesNotExist:
         return Response(
@@ -600,7 +629,12 @@ def revoquer_invitation(request, invitation_id):
             status=status.HTTP_404_NOT_FOUND
         )
 
-    invitation.status = 'revoked'
-    invitation.save()
-
-    return Response({'message': 'Invitation révoquée avec succès.'})
+    if invitation.status == 'revoked':
+        return Response({'message': 'Invitation déjà révoquée.'})
+    # Le ticket de l'invité est annulé (remboursé s'il était payé) et il est prévenu
+    from .lifecycle import revoke_invitation
+    result = revoke_invitation(invitation)
+    message = 'Invitation révoquée.'
+    if result['refunds_failed']:
+        message += " Le remboursement n'a pas pu être fait automatiquement : faites-le depuis votre tableau de bord Stripe."
+    return Response({'message': message, **result})

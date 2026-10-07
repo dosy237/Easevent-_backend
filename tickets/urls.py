@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import views
+from . import checkin, views
 
 urlpatterns = [
     path('tickets/mine/',                     views.my_tickets,        name='tickets-mine'),
@@ -12,9 +12,19 @@ urlpatterns = [
     path('tickets/<uuid:ticket_id>/pdf-link/', views.ticket_pdf_link,  name='ticket-pdf-link'),
     path('tickets/pdf/<str:token>/',          views.ticket_pdf,        name='ticket-pdf'),
     path('events/<uuid:event_id>/tickets/',   views.take_ticket,       name='event-take-ticket'),
+    path('events/<uuid:event_id>/check-in/',  checkin.check_in,        name='event-check-in'),
     path('payments/connect/status/',          views.connect_status,    name='connect-status'),
     path('payments/connect/onboard/',         views.connect_onboard,   name='connect-onboard'),
     path('payments/connect/dashboard/',       views.connect_dashboard, name='connect-dashboard'),
     path('payments/return/',                  views.payment_return,    name='payment-return'),
+    path('tickets/<uuid:ticket_id>/mobile-money/', views.mobile_money_checkout, name='ticket-mobile-money'),
+    path('events/<uuid:event_id>/gifts/',     views.event_gifts,       name='event-gifts'),
+    path('gifts/<uuid:gift_id>/',             views.gift_detail,       name='gift-detail'),
+    path('gifts/<uuid:gift_id>/checkout/',    views.gift_checkout,     name='gift-checkout'),
+    path('gifts/<uuid:gift_id>/mobile-money/', views.gift_mobile_money, name='gift-mobile-money'),
+    path('gifts/<uuid:gift_id>/cancel/',      views.gift_cancel,       name='gift-cancel'),
+    path('payments/methods/',                 views.payment_methods,   name='payment-methods'),
+    path('payments/mobile-money/webhook/',    views.mobile_money_webhook, name='mobile-money-webhook'),
+    path('payments/mobile-money/return/',     views.mobile_money_return,  name='mobile-money-return'),
     path('stripe/webhook/',                   views.stripe_webhook,    name='stripe-webhook'),
 ]

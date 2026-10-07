@@ -89,7 +89,18 @@ def user_payload(user):
         'is_verified':         user.is_verified,
         'marketing_opt_in':    user.marketing_opt_in,
         'accepted_privacy_at': user.accepted_privacy_at.isoformat() if user.accepted_privacy_at else None,
+        # Téléphone masqué ; « phone_verified » faux = numéro saisi mais pas encore confirmé
+        'phone':               _masked_phone(user),
+        'phone_verified':      user.phone_verified_at is not None,
+        # Accès au tableau de bord de l'équipe (le serveur revérifie chaque appel)
+        'is_staff':            user.is_staff,
+        'is_superuser':        user.is_superuser,
     }
+
+
+def _masked_phone(user):
+    from .phone import masked
+    return masked(user)
 
 
 def _clean_name(value, label):
@@ -118,6 +129,18 @@ class RegisterSerializer(serializers.Serializer):
     accepted_privacy_at = serializers.DateTimeField(required=False, allow_null=True)
     marketing_opt_in = serializers.BooleanField(required=False, default=False)
     invitation_token = serializers.CharField(required=False, allow_blank=True, max_length=64)
+    # Obligatoire : relie le compte aux invitations reçues par SMS (vérifié par code)
+    phone_number     = serializers.CharField(max_length=30, error_messages={
+        'required': 'Le numéro de téléphone est requis.', 'blank': 'Le numéro de téléphone est requis.'})
+    # Canal du code de vérification choisi par l'utilisateur
+    verification_channel = serializers.ChoiceField(choices=['email', 'sms'], required=False, default='email')
+
+    def validate_phone_number(self, value):
+        from invitations.services import normalize_phone
+        e164 = normalize_phone(value)
+        if not e164:
+            raise serializers.ValidationError('Numéro invalide : indiquez-le avec son indicatif (ex. +33 6 12 34 56 78).')
+        return e164
 
     def validate_email(self, value):
         from .models import User
