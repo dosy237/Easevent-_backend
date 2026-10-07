@@ -230,7 +230,8 @@ class EventPublicSerializer(serializers.ModelSerializer):
         user = getattr(request, 'user', None)
         if not user or not user.is_authenticated:
             return None
-        if obj.organizer_id == user.id:
+        from .team import role_of
+        if role_of(obj, user):
             return obj.online_link
         from tickets.models import Ticket
         has_ticket = Ticket.objects.filter(event=obj, user=user, status=Ticket.Status.GENERATED).exists()

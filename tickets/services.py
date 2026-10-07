@@ -38,7 +38,8 @@ def can_access_event(event, user):
     """Public publié, ou privé avec une invitation valide, ou organisateur."""
     if event.deleted_at is not None:
         return False
-    if event.organizer_id == user.id:
+    from events.team import role_of
+    if role_of(event, user):
         return True
     if event.status != 'published':
         return False

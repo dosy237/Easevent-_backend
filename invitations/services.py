@@ -310,6 +310,10 @@ def invite_batch(event, organizer, *, emails=(), phones=(), user_ids=(), message
         raise InviteError(f'{settings.INVITE_BATCH_MAX} invités maximum par envoi.', 'batch_too_large')
 
     skipped, candidates, seen = [], [], set()
+    # organizer : la personne qui invite (organisateur ou co-organisateur) ; l'équipe ne s'invite pas
+    from events.team import TeamError, check_invite_quota, manager_ids
+    team_ids = set(manager_ids(event)) | {organizer.id}
+    team_emails = {e.lower() for e in User.objects.filter(id__in=team_ids).values_list('email', flat=True) if e}
 
     def skip(value, reason):
         skipped.append({'value': value, 'reason': reason})
@@ -327,7 +331,7 @@ def invite_batch(event, organizer, *, emails=(), phones=(), user_ids=(), message
         user = members.get(uid)
         if user is None:
             skip(uid, 'unknown_user')
-        elif user.id == organizer.id:
+        elif user.id in team_ids:
             skip(user.full_name, 'self')
         elif ('u', user.id) not in seen:
             seen.add(('u', user.id))
@@ -345,7 +349,7 @@ def invite_batch(event, organizer, *, emails=(), phones=(), user_ids=(), message
     accounts = {u.email.lower(): u for u in User.objects.filter(
         email__in=normalized, is_active=True, is_verified=True, deleted_at__isnull=True)} if normalized else {}
     for email in normalized:
-        if email == organizer.email.lower():
+        if email in team_emails:
             skip(email, 'self')
             continue
         user = accounts.get(email)
@@ -390,6 +394,11 @@ def invite_batch(event, organizer, *, emails=(), phones=(), user_ids=(), message
             'plan_limit', 403, {'usage': usage, 'remaining': remaining},
         )
 
+    try:
+        check_invite_quota(event, organizer, len(fresh))
+    except TeamError as exc:
+        raise InviteError(exc.message, exc.code, exc.status, {'usage': usage})
+
     expires_at = (event.end_date or event.start_date) + timedelta(days=7)
     created = []
     with transaction.atomic():
@@ -397,6 +406,7 @@ def invite_batch(event, organizer, *, emails=(), phones=(), user_ids=(), message
             inv = Invitation(
                 event=event,
                 invited_user=c['user'],
+                invited_by=organizer,
                 email=c['email'],
                 contact_name=c['name'],
                 message=message,

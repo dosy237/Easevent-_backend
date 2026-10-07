@@ -33,6 +33,7 @@ PREF_OF_TYPE = {
     'guest_response': 'guest_responses',
     'message_received': 'messages',
     'question_to_answer': 'messages',
+    'event_broadcast': 'messages',
 }
 
 

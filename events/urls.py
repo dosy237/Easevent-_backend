@@ -6,6 +6,7 @@ from rsvp import views as rsvp
 from minisite import views as minisite_views
 from . import engagement
 from . import video as event_video
+from . import insights, memories, team_views
 
 urlpatterns = [
     # ── Événements publics (visiteurs) ────────────────────────
@@ -43,4 +44,20 @@ urlpatterns = [
     path('<uuid:event_id>/minisite/generation/',              minisite_views.generation, name='minisite-generation'),
     path('<uuid:event_id>/minisite/choose/',                  minisite_views.choose,     name='minisite-choose'),
     path('participants/export/<str:token>/', guests.export_csv,                    name='event-guests-export'),
+
+    # ── Cogestion, diffusion, statistiques, finances, souvenirs ──
+    path('team/invitations/',                                 team_views.team_invitations, name='team-invitations'),
+    path('team/<uuid:collab_id>/respond/',                    team_views.team_respond,     name='team-respond'),
+    path('<uuid:event_id>/team/',                             team_views.team,             name='event-team'),
+    path('<uuid:event_id>/team/split/',                       team_views.team_split,       name='event-team-split'),
+    path('<uuid:event_id>/team/<uuid:collab_id>/',            team_views.team_member,      name='event-team-member'),
+    path('<uuid:event_id>/broadcast/',                        team_views.broadcast,        name='event-broadcast'),
+    path('<uuid:event_id>/stats/',                            insights.event_stats,        name='event-stats'),
+    path('<uuid:event_id>/attendance/',                       insights.attendance,         name='event-attendance'),
+    path('<uuid:event_id>/finance/',                          insights.event_finance,      name='event-finance'),
+    path('<uuid:event_id>/comments/',                         memories.comments,           name='event-comments'),
+    path('<uuid:event_id>/comments/<uuid:comment_id>/',       memories.comment_detail,     name='event-comment'),
+    path('<uuid:event_id>/memories/',                         memories.memories,           name='event-memories'),
+    path('<uuid:event_id>/memories/<uuid:media_id>/',         memories.memory_detail,      name='event-memory'),
+    path('memories/photo/<str:token>/',                       memories.photo_file,         name='event-memory-photo'),
 ]

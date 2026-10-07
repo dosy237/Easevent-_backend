@@ -125,6 +125,9 @@ def _message(msg, user, other_read_at, request=None):
         'read':        bool(other_read_at and msg.sender_id == user.id and other_read_at >= msg.created_at),
         # Réponse automatique de l'assistant (au nom de l'organisateur)
         'assistant':   bool(msg.meta.get('assistant')) if isinstance(msg.meta, dict) else False,
+        # Message envoyé à tous les invités (signé par le co-organisateur qui l'a écrit)
+        'broadcast':   bool(msg.meta.get('broadcast')) if isinstance(msg.meta, dict) else False,
+        'by':          (msg.meta.get('by') or '') if isinstance(msg.meta, dict) else '',
     }
     if msg.kind == 'image' and msg.attachment:
         # Lien signé valable 24 h : l'image d'une conversation n'est jamais publique

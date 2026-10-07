@@ -206,6 +206,12 @@ class Event(models.Model):
 
     # ── Métriques ─────────────────────────────────────────────
     view_count = models.PositiveIntegerField(default=0, verbose_name="Nombre de vues")
+    # Présence réelle, saisie par l'organisateur après l'événement
+    attendance_count = models.PositiveIntegerField(null=True, blank=True, verbose_name="Personnes réellement présentes")
+    attendance_reported_at = models.DateTimeField(null=True, blank=True)
+
+    # Répartition des places entre l'organisateur et ses co-organisateurs : {"<user_id>": nombre}
+    guest_split = models.JSONField(default=dict, blank=True, verbose_name="Répartition des invités par organisateur")
 
     # Première publication : un événement publié puis supprimé reste compté dans le quota du plan
     published_at = models.DateTimeField(null=True, blank=True, verbose_name="Date de première publication")
@@ -287,6 +293,10 @@ class EventMedia(models.Model):
         blank = True,
         verbose_name = "5 couleurs dominantes (RGB)"
     )
+
+    caption = models.CharField(max_length=300, blank=True, default='', verbose_name="Légende")
+    width = models.PositiveIntegerField(null=True, blank=True)
+    height = models.PositiveIntegerField(null=True, blank=True)
 
     # True par défaut, False pour les photos souvenir à valider
     is_approved = models.BooleanField(default=True, verbose_name="Approuvée par l'organisateur")
@@ -384,8 +394,21 @@ class EventCollaborator(models.Model):
     et cumulables sans multiplier les colonnes en base.
     """
 
+    class Role(models.TextChoices):
+        COHOST       = 'cohost',       'Co-organisateur'
+        PHOTOGRAPHER = 'photographer', 'Photographe'
+
+    class Status(models.TextChoices):
+        PENDING  = 'pending',  'En attente'
+        ACCEPTED = 'accepted', 'Acceptée'
+        DECLINED = 'declined', 'Refusée'
+
     id    = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name='collaborators')
+    role   = models.CharField(max_length=15, choices=Role.choices, default=Role.COHOST)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
+    invited_by = models.ForeignKey('users.User', on_delete=models.SET_NULL, null=True, blank=True,
+                                   related_name='+')
     user  = models.ForeignKey(
         'users.User',
         on_delete    = models.CASCADE,
@@ -408,6 +431,19 @@ class EventCollaborator(models.Model):
 
     def __str__(self):
         return f"{self.user.full_name} collabore sur '{self.event.title}'"
+
+
+class EventComment(models.Model):
+    """Commentaire laissé après l'événement (public : tout le monde ; privé : les invités)."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name='comments')
+    author = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='event_comments')
+    body = models.TextField(max_length=1000)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [models.Index(fields=['event', '-created_at'])]
 
 
 

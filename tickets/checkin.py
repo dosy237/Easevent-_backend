@@ -55,7 +55,8 @@ def _find(event, code):
 @permission_classes([IsAuthenticated])
 @throttle_classes([CheckInThrottle])
 def check_in(request, event_id):
-    event = Event.objects.filter(pk=event_id, organizer=request.user, deleted_at__isnull=True).first()
+    from events.team import managed_event
+    event = managed_event(request.user, event_id)
     if event is None:
         raise Http404
     if request.method == 'GET':

@@ -199,7 +199,9 @@ def _own_upload(event, url):
     from adminpanel.keys import apply_cloudinary
     cloud = apply_cloudinary().cloud_name or ''
     prefix = f'https://res.cloudinary.com/{cloud}/image/upload/'
-    return bool(cloud) and url.startswith(prefix) and f'/easevent/events/{event.organizer_id}/' in url \
+    from events.team import manager_ids
+    owners = any(f'/easevent/events/{uid}/' in url for uid in manager_ids(event))
+    return bool(cloud) and url.startswith(prefix) and owners \
         and len(url) <= 500 and not any(ch in url for ch in ' "\'<>')
 
 

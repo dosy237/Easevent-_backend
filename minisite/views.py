@@ -14,6 +14,7 @@ from rest_framework.throttling import UserRateThrottle
 
 from events.models import Event
 from events.serializers import EventPublicSerializer
+from events.team import is_manager
 
 from . import services
 from .models import MiniSiteGeneration
@@ -28,15 +29,16 @@ def _error(exc):
 
 
 def _own(request, event_id):
-    return Event.objects.select_related('organizer').filter(
-        pk=event_id, organizer=request.user, deleted_at__isnull=True).first()
+    from events.team import managed_event
+    return managed_event(request.user, event_id)
 
 
 def _can_view(request, event):
     if event.deleted_at is not None:
         return False
     user = request.user
-    if user.is_authenticated and event.organizer_id == user.id:
+    from events.team import role_of
+    if role_of(event, user):
         return True
     if event.status != 'published':
         return False
@@ -74,7 +76,7 @@ def minisite(request, event_id):
     return Response({
         'spec': cfg['spec'],
         'event': EventPublicSerializer(event, context={'request': request, 'with_my_ticket': True}).data,
-        'is_organizer': request.user.is_authenticated and event.organizer_id == request.user.id,
+        'is_organizer': is_manager(event, request.user),
     })
 
 

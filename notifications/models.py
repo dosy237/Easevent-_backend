@@ -44,6 +44,11 @@ class Notification(models.Model):
         MINISITE_READY      = 'minisite_ready',      'Mini-site prêt'
         TICKET_GIFT         = 'ticket_gift',         'Billet offert'
         QUESTION_TO_ANSWER  = 'question_to_answer',  'Question à laquelle répondre'
+        TEAM_INVITE         = 'team_invite',         "Invitation à co-organiser"
+        TEAM_RESPONSE       = 'team_response',       "Réponse d'un co-organisateur"
+        EVENT_BROADCAST     = 'event_broadcast',     "Message à tous les invités"
+        EVENT_COMMENT       = 'event_comment',       'Nouveau commentaire'
+        MEMORIES_ADDED      = 'memories_added',      'Nouvelles photos souvenirs'
 
     class Category(models.TextChoices):
         EVENTS   = 'events',   'Événements'
@@ -61,6 +66,8 @@ class Notification(models.Model):
         'event_cancelled': 'events', 'invitation_revoked': 'events',
         'payouts_ready': 'system', 'payment_refunded': 'system', 'subscription': 'system',
         'ticket_gift': 'events', 'question_to_answer': 'messages',
+        'team_invite': 'events', 'team_response': 'events', 'event_broadcast': 'messages',
+        'event_comment': 'events', 'memories_added': 'events',
     }
 
     id         = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

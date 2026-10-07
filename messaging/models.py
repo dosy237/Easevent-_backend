@@ -145,3 +145,16 @@ class EventQuestion(models.Model):
     class Meta:
         ordering = ['-created_at']
         indexes = [models.Index(fields=['event', 'status'])]
+
+
+class EventBroadcast(models.Model):
+    """Message envoyé d'un coup à tous les invités d'un événement (une copie dans chaque conversation)."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    event = models.ForeignKey('events.Event', on_delete=models.CASCADE, related_name='broadcasts')
+    sent_by = models.ForeignKey('users.User', on_delete=models.SET_NULL, null=True, related_name='+')
+    body = models.TextField(max_length=1000)
+    recipients = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']

@@ -31,10 +31,11 @@ class RsvpThrottle(UserRateThrottle):
 
 
 def _own_event(request, event_id):
-    try:
-        return Event.objects.get(id=event_id, organizer=request.user, deleted_at__isnull=True)
-    except Event.DoesNotExist:
+    from events.team import managed_event
+    event = managed_event(request.user, event_id)
+    if event is None:
         raise Http404
+    return event
 
 
 def _error(exc):

@@ -64,6 +64,9 @@ class Invitation(models.Model):
         related_name = 'invitations',
         verbose_name = "Événement concerné"
     )
+    # Organisateur ou co-organisateur qui a envoyé l'invitation (vide = l'organisateur)
+    invited_by = models.ForeignKey('users.User', on_delete=models.SET_NULL, null=True, blank=True,
+                                   related_name='+')
 
     # ── Destinataire (l'un ou l'autre, jamais les deux) ───────
     invited_user = models.ForeignKey(

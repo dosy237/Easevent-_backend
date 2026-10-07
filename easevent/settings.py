@@ -184,12 +184,14 @@ REST_FRAMEWORK = {
         'rsvp':            '120/hour',     # questions RSVP (organisateur) et réponses
         'billing':         '30/hour',      # abonnements : sessions Stripe
         'checkin':         '120/min',      # scanner de tickets à l'entrée
-        'minisite':        '20/hour',
-        'admin':           '600/min',
-        'gifts':           '60/hour',      # billets offerts (création, consultation)      # tableau de bord de l'équipe
+        'minisite':        '20/hour',      # générations de mini-site (appels aux modèles d'IA)
+        'admin':           '600/min',      # tableau de bord de l'équipe
+        'gifts':           '60/hour',      # billets offerts (création, consultation)
         'likes':           '120/min',      # « J'aime » (aimer / retirer)
-        'share':           '30/hour',
-        'video':           '20/hour',      # signatures d'envoi de vidéo (Cloudinary)      # partages d'événements à des amis      # générations de mini-site (appels aux modèles d'IA)
+        'share':           '30/hour',      # partages d'événements à des amis
+        'video':           '20/hour',      # signatures d'envoi de vidéo (Cloudinary)
+        'memories':        '300/hour',     # souvenirs : photos et commentaires
+        'team':            '60/hour',      # équipe : co-organisateurs, photographes, diffusion
     },
 }
 

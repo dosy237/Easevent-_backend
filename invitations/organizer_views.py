@@ -44,11 +44,11 @@ EXPORT_PLANS = ('standard', 'pro')
 
 
 def _own_event(request, event_id):
-    try:
-        return Event.objects.select_related('organizer').get(
-            id=event_id, organizer=request.user, deleted_at__isnull=True)
-    except Event.DoesNotExist:
+    from events.team import managed_event
+    event = managed_event(request.user, event_id)
+    if event is None:
         raise Http404
+    return event
 
 
 def _error(exc):
@@ -216,8 +216,11 @@ def participants(request, event_id):
 def remind_one(request, invitation_id):
     try:
         inv = Invitation.objects.select_related('event', 'event__organizer', 'invited_user').get(
-            id=invitation_id, event__organizer=request.user, event__deleted_at__isnull=True)
-    except Invitation.DoesNotExist:
+            id=invitation_id, event__deleted_at__isnull=True)
+    except (Invitation.DoesNotExist, ValueError):
+        raise Http404
+    from events.team import is_manager
+    if not is_manager(inv.event, request.user):
         raise Http404
     if not can_remind(inv):
         if inv.status not in ('sent', 'opened'):
@@ -259,7 +262,7 @@ def remind_pending(request, event_id):
 @permission_classes([IsAuthenticated])
 def export_link(request, event_id):
     event = _own_event(request, event_id)
-    if request.user.subscription_plan not in EXPORT_PLANS:
+    if event.organizer.subscription_plan not in EXPORT_PLANS:
         return Response({'detail': "L'export de la liste des invités est inclus dans le plan Standard.",
                          'code': 'plan_required'}, status=status.HTTP_403_FORBIDDEN)
     token = signing.dumps({'e': str(event.id), 'u': str(request.user.id)}, salt=EXPORT_SALT, compress=True)
@@ -274,11 +277,14 @@ STATUS_LABELS = {
 
 
 def export_csv(request, token):
+    from events.team import managed_event
+    from users.models import User
     try:
         data = signing.loads(token, salt=EXPORT_SALT, max_age=EXPORT_TTL)
-        event = Event.objects.select_related('organizer').get(
-            id=data['e'], organizer_id=data['u'], deleted_at__isnull=True)
-    except (signing.BadSignature, KeyError, Event.DoesNotExist):
+        event = managed_event(User.objects.get(pk=data['u']), data['e'])
+    except (signing.BadSignature, KeyError, User.DoesNotExist, ValueError):
+        raise Http404
+    if event is None:
         raise Http404
     if event.organizer.subscription_plan not in EXPORT_PLANS:
         raise Http404                        # abonnement arrêté depuis la création du lien
@@ -332,8 +338,9 @@ def search_users(request):
     event_id = request.query_params.get('event')
     if event_id:
         try:
+            from events.team import managers_q
             invited = set(Invitation.objects.filter(
-                event_id=event_id, event__organizer=request.user, invited_user__in=users,
+                event_id=event_id, event__in=Event.objects.filter(managers_q(request.user)), invited_user__in=users,
             ).exclude(status='revoked').values_list('invited_user_id', flat=True))
         except Exception:
             invited = set()

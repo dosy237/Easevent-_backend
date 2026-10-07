@@ -55,7 +55,8 @@ def may_write(conv, user):
     """Peut encore écrire dans cette conversation (amitié retirée, accès à l'événement perdu…)."""
     if conv.is_direct:
         other = conv.participant if user.id == conv.organizer_id else conv.organizer
-        return other.is_active and (are_friends(user, other) or linked_by_gift(user, other))
+        return other.is_active and (are_friends(user, other) or linked_by_gift(user, other)
+                                    or linked_by_team(user, other))
     if user.id == conv.organizer_id:
         return True
     return may_converse(conv.event, user)
@@ -65,6 +66,12 @@ def linked_by_gift(a, b):
     """Un billet offert entre deux personnes leur ouvre la conversation (remerciements, détails)."""
     from tickets.models import TicketGift
     return TicketGift.objects.filter(Q(buyer=a, recipient=b) | Q(buyer=b, recipient=a), status='delivered').exists()
+
+
+def linked_by_team(a, b):
+    """Organisateurs d'un même événement : ils s'accordent par message (répartition des invités…)."""
+    from events.team import linked_by_team as _linked
+    return _linked(a, b)
 
 
 def get_or_create_pair(a, b):
@@ -81,7 +88,7 @@ def get_or_create_pair(a, b):
 
 def get_or_create_direct(user, friend):
     """Conversation directe entre deux amis (une seule par paire)."""
-    if user.id == friend.id or not friend.is_active or not are_friends(user, friend):
+    if user.id == friend.id or not friend.is_active or not (are_friends(user, friend) or linked_by_team(user, friend)):
         raise MessagingError('Vous ne pouvez écrire qu’à vos amis.', 'not_friends', 403)
     a, b = sorted((user, friend), key=lambda u: str(u.id))
     try:

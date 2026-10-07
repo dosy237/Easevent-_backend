@@ -25,6 +25,7 @@
 # ─────────────────────────────────────────────────────────────────
 import math
 import secrets
+import uuid
 from datetime import datetime
 
 # ─────────────────────────────────────────────────────────────────
@@ -171,15 +172,21 @@ def mes_evenements(request):
     Retourne tous les événements créés par l'utilisateur connecté.
     Inclut les brouillons, publiés et archivés.
     """
+    from .models import EventCollaborator
+    roles = dict(EventCollaborator.objects.filter(user=request.user, status='accepted')
+                 .values_list('event_id', 'role'))
     evenements = Event.objects.select_related('organizer').filter(
-        organizer          = request.user,
+        Q(organizer=request.user) | Q(id__in=list(roles)),
         deleted_at__isnull = True,
     ).order_by('-created_at')
 
-    serializer = EventPublicSerializer(evenements, many=True, context={'request': request})
+    data = EventPublicSerializer(evenements, many=True, context={'request': request}).data
+    for item in data:
+        # Rôle de l'utilisateur : organisateur, co-organisateur ou photographe
+        item['my_role'] = roles.get(uuid.UUID(str(item['id'])), 'organizer')
     return Response({
-        'count':  evenements.count(),
-        'events': serializer.data,
+        'count':  len(data),
+        'events': data,
     })
 
 
@@ -367,13 +374,9 @@ def detail_evenement_organisateur(request, event_id):
     Retourne le détail complet d'un événement pour son organisateur.
     Inclut les statistiques des invitations par statut.
     """
-    try:
-        event = Event.objects.get(
-            id                 = event_id,
-            organizer          = request.user,
-            deleted_at__isnull = True,
-        )
-    except Event.DoesNotExist:
+    from .team import managed_event
+    event = managed_event(request.user, event_id)
+    if event is None:
         return Response(
             {'detail': 'Événement introuvable.'},
             status=status.HTTP_404_NOT_FOUND
@@ -387,8 +390,10 @@ def detail_evenement_organisateur(request, event_id):
         'total':     event.invitations.exclude(status='revoked').count(),
     }
 
+    from .team import role_of
     serializer = EventPublicSerializer(event, context={'request': request})
     return Response({
+        'my_role':     role_of(event, request.user),
         # template_config (galerie…) : réservé à l'organisateur, pour l'écran « Modifier »
         'event':       {**serializer.data, 'template_config': event.template_config or {},
                         'video_public_id': event.video_public_id},
@@ -408,13 +413,9 @@ def modifier_evenement(request, event_id):
     PATCH = mise à jour partielle : on n'envoie que les champs à modifier.
     Seul l'organisateur peut modifier son événement.
     """
-    try:
-        event = Event.objects.get(
-            id                 = event_id,
-            organizer          = request.user,
-            deleted_at__isnull = True,
-        )
-    except Event.DoesNotExist:
+    from .team import managed_event
+    event = managed_event(request.user, event_id)
+    if event is None:
         return Response(
             {'detail': 'Événement introuvable.'},
             status=status.HTTP_404_NOT_FOUND
@@ -493,13 +494,9 @@ def publier_evenement(request, event_id):
     - L'événement disparaît du fil public
     - Les invitations existantes restent actives
     """
-    try:
-        event = Event.objects.get(
-            id                 = event_id,
-            organizer          = request.user,
-            deleted_at__isnull = True,
-        )
-    except Event.DoesNotExist:
+    from .team import managed_event
+    event = managed_event(request.user, event_id)
+    if event is None:
         return Response(
             {'detail': 'Événement introuvable.'},
             status=status.HTTP_404_NOT_FOUND
