@@ -192,6 +192,9 @@ def sync(reference):
         return None
     if reference.startswith('gf-'):
         return _sync_gift(reference)
+    if reference.startswith('bk-'):
+        from baskets.payments import sync_mobile_money
+        return sync_mobile_money(reference)
     ticket = Ticket.objects.select_related('event', 'user').filter(mobile_money_reference=reference).first()
     if ticket is None:
         logger.warning('Notch Pay : référence inconnue %s', reference)

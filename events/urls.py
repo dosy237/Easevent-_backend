@@ -7,6 +7,7 @@ from minisite import views as minisite_views
 from . import engagement
 from . import video as event_video
 from . import insights, memories, team_views
+from baskets import views as basket_views
 
 urlpatterns = [
     # ── Événements publics (visiteurs) ────────────────────────
@@ -59,5 +60,6 @@ urlpatterns = [
     path('<uuid:event_id>/comments/<uuid:comment_id>/',       memories.comment_detail,     name='event-comment'),
     path('<uuid:event_id>/memories/',                         memories.memories,           name='event-memories'),
     path('<uuid:event_id>/memories/<uuid:media_id>/',         memories.memory_detail,      name='event-memory'),
+    path('<uuid:event_id>/basket/',                           basket_views.event_basket,   name='event-basket'),
     path('memories/photo/<str:token>/',                       memories.photo_file,         name='event-memory-photo'),
 ]

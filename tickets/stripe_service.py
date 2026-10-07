@@ -329,6 +329,11 @@ def handle_event(event):
         handle_stripe_event(kind, obj)
         return
 
+    if kind.startswith('checkout.session.') and (obj.get('metadata') or {}).get('basket_contribution_id'):
+        from baskets.payments import handle_stripe_session
+        handle_stripe_session(kind, obj)
+        return
+
     if kind.startswith('checkout.session.') and (obj.get('metadata') or {}).get('gift_id'):
         _handle_gift_session(kind, obj)
         return

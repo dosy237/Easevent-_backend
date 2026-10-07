@@ -102,6 +102,9 @@ def repondre_invitation(request, invitation_id):
     # Fil de la conversation avec l'organisateur (M15 / M16)
     from messaging.services import record_invitation_event
     record_invitation_event(invitation, 'invitation_accepted' if new_status == 'confirmed' else 'invitation_declined')
+    if new_status == 'confirmed':
+        from baskets.services import announce
+        announce(invitation.event, request.user)
 
     # Organisateur : « Claire a accepté votre invitation » (notification groupée + push)
     from notifications.services import notify_guest_activity

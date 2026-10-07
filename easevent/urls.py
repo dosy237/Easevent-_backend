@@ -30,6 +30,7 @@ urlpatterns = [
     path('api/notifications/', include('notifications.urls')),
     path('api/conversations/', include('messaging.urls')),
     path('api/friends/', include('social.urls')),
+    path('api/baskets/', include('baskets.urls')),
 
     # Annuaire des membres (M12 mode Membres, M29)
     path('api/users/search/', guests.search_users,  name='users-search'),

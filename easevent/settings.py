@@ -95,6 +95,7 @@ INSTALLED_APPS = [
     'rsvp',
     'minisite',
     'adminpanel',
+    'baskets',
     'channels',
 ]
 
@@ -192,6 +193,7 @@ REST_FRAMEWORK = {
         'video':           '20/hour',      # signatures d'envoi de vidéo (Cloudinary)
         'memories':        '300/hour',     # souvenirs : photos et commentaires
         'team':            '60/hour',      # équipe : co-organisateurs, photographes, diffusion
+        'baskets':         '120/hour',     # panier : ajouts, paiements
     },
 }
 

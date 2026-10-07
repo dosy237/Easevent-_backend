@@ -49,6 +49,8 @@ class Notification(models.Model):
         EVENT_BROADCAST     = 'event_broadcast',     "Message à tous les invités"
         EVENT_COMMENT       = 'event_comment',       'Nouveau commentaire'
         MEMORIES_ADDED      = 'memories_added',      'Nouvelles photos souvenirs'
+        BASKET_OPEN         = 'basket_open',         'Panier ouvert'
+        BASKET_CONTRIBUTION = 'basket_contribution', 'Ajout au panier'
 
     class Category(models.TextChoices):
         EVENTS   = 'events',   'Événements'
@@ -68,6 +70,7 @@ class Notification(models.Model):
         'ticket_gift': 'events', 'question_to_answer': 'messages',
         'team_invite': 'events', 'team_response': 'events', 'event_broadcast': 'messages',
         'event_comment': 'events', 'memories_added': 'events',
+        'basket_open': 'events', 'basket_contribution': 'events',
     }
 
     id         = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

@@ -128,6 +128,8 @@ def _message(msg, user, other_read_at, request=None):
         # Message envoyé à tous les invités (signé par le co-organisateur qui l'a écrit)
         'broadcast':   bool(msg.meta.get('broadcast')) if isinstance(msg.meta, dict) else False,
         'by':          (msg.meta.get('by') or '') if isinstance(msg.meta, dict) else '',
+        # Annonce d'un panier : carte « Ouvrir le panier »
+        'basket_id':   (msg.meta.get('basket') or None) if isinstance(msg.meta, dict) else None,
     }
     if msg.kind == 'image' and msg.attachment:
         # Lien signé valable 24 h : l'image d'une conversation n'est jamais publique

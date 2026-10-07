@@ -1,8 +1,7 @@
-from django.contrib import admin
-
 from django import forms
+from django.contrib import admin, messages
 
-from . import keys
+from . import key_checks, keys
 from .models import AdminAction, Announcement, ServiceKey
 
 
@@ -30,10 +29,17 @@ class ServiceKeyForm(forms.ModelForm):
 
     def clean(self):
         data = super().clean()
-        if not self.instance.pk and not data.get('value'):
+        # Guillemets, espaces ou « NOM= » collés par erreur : retirés avant la vérification
+        value = key_checks.clean(data.get('value'))
+        data['value'] = value
+        if not self.instance.pk and not value:
             raise forms.ValidationError('Saisissez la valeur de la clé.')
-        if data.get('value') and (len(data['value']) > 500 or any(c.isspace() for c in data['value'])):
-            raise forms.ValidationError('Valeur invalide (une clé ne contient pas d’espace).')
+        if value:
+            if len(value) > 500:
+                raise forms.ValidationError('Valeur trop longue.')
+            error = key_checks.check_format(data.get('name') or self.instance.name, value)
+            if error:
+                self.add_error('value', error)
         return data
 
 
@@ -42,6 +48,14 @@ class ServiceKeyAdmin(admin.ModelAdmin):
     form = ServiceKeyForm
     list_display = ('__str__', 'masked', 'updated_at', 'updated_by')
     readonly_fields = ('masked', 'updated_at', 'updated_by')
+    actions = ('test_keys',)
+
+    @admin.action(description='Tester les clés sélectionnées (lecture seule, aucun envoi)')
+    def test_keys(self, request, queryset):
+        for obj in queryset:
+            ok, msg = key_checks.live_check(obj.name, keys.get_key)
+            level = messages.SUCCESS if ok else (messages.INFO if ok is None else messages.ERROR)
+            self.message_user(request, f'{obj.get_name_display()} : {msg}', level)
 
     @admin.display(description='Valeur')
     def masked(self, obj):
@@ -60,5 +74,13 @@ class ServiceKeyAdmin(admin.ModelAdmin):
             obj.last4 = value[-4:]
         obj.updated_by = request.user
         super().save_model(request, obj, form, change)
+        if value:
+            for warning in key_checks.warnings(obj.name, value):
+                self.message_user(request, warning, messages.WARNING)
+            # Test immédiat : on sait tout de suite si le service accepte la clé
+            ok, msg = key_checks.live_check(obj.name, lambda n: value if n == obj.name else keys.get_key(n))
+            if ok is not None:
+                self.message_user(request, f'Test en direct — {obj.get_name_display()} : {msg}',
+                                  messages.SUCCESS if ok else messages.ERROR)
         AdminAction.objects.create(actor=request.user, action='servicekey.save', target_type='servicekey',
                                    target_id=obj.name, detail={'changed': bool(value)})

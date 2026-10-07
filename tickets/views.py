@@ -278,6 +278,13 @@ def mobile_money_return(request):
     except Exception:
         pass
     from .models import TicketGift
+    from baskets.models import Contribution
+    if isinstance(ticket, Contribution):
+        done = ticket.status == Contribution.Status.PAID
+        title = 'Merci !' if done else ('Paiement non abouti' if ticket.status == 'failed' else 'Paiement en cours')
+        message = ('Votre participation est dans le panier. Retournez dans Easevent.' if done else
+                   'Validez le paiement sur votre téléphone, puis retournez dans Easevent.')
+        return render(request, 'tickets/return.html', {'title': title, 'message': message, 'deeplink': 'easevent://invitations'})
     if isinstance(ticket, TicketGift):
         done = ticket.status in (TicketGift.Status.DELIVERED, TicketGift.Status.PAID)
         title = 'Cadeau réglé' if done else ('Paiement non abouti' if ticket.payment_status == 'failed' else 'Paiement en cours')
@@ -374,6 +381,8 @@ def payment_return(request):
     pages = {
         ('ticket', 'success'):  ('Paiement envoyé', 'Votre billet apparaît dans « Mes invitations » dès que le paiement est confirmé.', 'easevent://invitations'),
         ('gift', 'success'):    ('Cadeau réglé', 'Merci ! Votre proche est prévenu dès la confirmation du paiement.', 'easevent://invitations'),
+        ('basket', 'success'):  ('Merci !', 'Votre participation apparaît dans le panier dès la confirmation du paiement.', 'easevent://invitations'),
+        ('basket', 'cancel'):   ('Paiement interrompu', 'Aucun montant n’a été prélevé. Vous pouvez réessayer depuis le panier.', 'easevent://invitations'),
         ('gift', 'cancel'):     ('Paiement interrompu', 'Aucun montant n’a été prélevé. Vous pouvez reprendre le cadeau depuis l’événement.', 'easevent://decouvrir'),
         ('ticket', 'cancel'):   ('Paiement interrompu', 'Votre billet reste dans « Mes invitations › En attente ». Vous pourrez payer plus tard.', 'easevent://invitations'),
         ('connect', 'done'):    ('Informations enregistrées', 'Retournez dans Easevent pour voir l’état de vos paiements.', 'easevent://profil/paiements'),

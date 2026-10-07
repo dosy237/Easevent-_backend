@@ -33,7 +33,7 @@ def audience(event):
     return users, outsiders
 
 
-def send_broadcast(event, sender, body):
+def send_broadcast(event, sender, body, meta=None):
     from notifications.models import Notification
     from notifications.services import notify
     from .realtime import broadcast_message
@@ -62,7 +62,7 @@ def send_broadcast(event, sender, body):
             continue
         # Côté « organisateur » de la conversation (l'événement), signé par le co-organisateur s'il y a lieu
         msg = Message.objects.create(conversation=conv, sender=event.organizer, body=body, created_at=now,
-                                     meta={'broadcast': str(record.id), **({'by': signature} if signature else {})})
+                                     meta={'broadcast': str(record.id), **({'by': signature} if signature else {}), **(meta or {})})
         Conversation.objects.filter(pk=conv.pk).update(last_message_at=now, organizer_read_at=now,
                                                        organizer_seen_at=now)
         broadcast_message(conv, msg)

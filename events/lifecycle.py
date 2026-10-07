@@ -69,6 +69,9 @@ def cancel_event(event, *, reason='event_cancelled', notify_guests=True):
     for gift in TicketGift.objects.select_related('event', 'buyer').filter(event=event, status=TicketGift.Status.PAID):
         refunds_failed += 0 if refund_gift(gift, reason) else 1
     TicketGift.objects.filter(event=event, status=TicketGift.Status.AWAITING_PAYMENT).update(status=TicketGift.Status.CANCELLED)
+    # Panier : les participations en argent sont remboursées
+    from baskets.services import refund_event
+    refunds_failed += refund_event(event, reason)
 
     from .tz import local
     when = local(event.start_date, event)

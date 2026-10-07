@@ -1,3 +1,5 @@
+from unittest import mock
+
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.test import TestCase, override_settings
@@ -19,19 +21,21 @@ class ServiceKeyTest(TestCase):
     def test_repli_environnement_puis_cle_chiffree_sans_redemarrage(self):
         self.assertEqual(keys.get_key('GEMINI_API_KEY'), 'cle-env')
         self.client.force_login(self.root)
-        r = self.client.post('/admin/adminpanel/servicekey/add/', {'name': 'GEMINI_API_KEY', 'value': 'AIzaSecrete1234'})
+        with mock.patch('requests.request') as req:                             # test en direct simulé
+            req.return_value.status_code = 200
+            r = self.client.post('/admin/adminpanel/servicekey/add/', {'name': 'GEMINI_API_KEY', 'value': 'AIzaSecreteFauxPourLesTests000000001234'})
         self.assertEqual(r.status_code, 302, r.content[:500])
         row = ServiceKey.objects.get(name='GEMINI_API_KEY')
         self.assertNotIn('AIzaSecrete', row.encrypted_value)                    # chiffrée en base
         self.assertEqual(row.last4, '1234')
-        self.assertEqual(keys.get_key('GEMINI_API_KEY'), 'AIzaSecrete1234')     # prise en compte aussitôt
+        self.assertEqual(keys.get_key('GEMINI_API_KEY'), 'AIzaSecreteFauxPourLesTests000000001234')     # prise en compte aussitôt
         # La page de modification n'affiche jamais la valeur
         page = self.client.get(f'/admin/adminpanel/servicekey/{row.pk}/change/').content.decode()
-        self.assertNotIn('AIzaSecrete1234', page)
+        self.assertNotIn('AIzaSecreteFauxPourLesTests000000001234', page)
         self.assertIn('1234', page)
         # Laisser vide garde la valeur ; suppression → retour à l'environnement
         self.client.post(f'/admin/adminpanel/servicekey/{row.pk}/change/', {'name': 'GEMINI_API_KEY', 'value': ''})
-        self.assertEqual(keys.get_key('GEMINI_API_KEY'), 'AIzaSecrete1234')
+        self.assertEqual(keys.get_key('GEMINI_API_KEY'), 'AIzaSecreteFauxPourLesTests000000001234')
         row.delete()
         self.assertEqual(keys.get_key('GEMINI_API_KEY'), 'cle-env')
         self.assertTrue(AdminAction.objects.filter(action='servicekey.save').exists())
