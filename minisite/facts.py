@@ -47,8 +47,9 @@ def _city(address):
 
 
 def facts(event):
-    start = timezone.localtime(event.start_date) if event.start_date else None
-    end = timezone.localtime(event.end_date) if event.end_date else None
+    from events.tz import local
+    start = local(event.start_date, event)
+    end = local(event.end_date, event)
     tc = event.template_config or {}
     gallery = [g for g in (tc.get('gallery') or []) if g]
     has_cover = bool(event.cover_image or tc.get('cover_image'))

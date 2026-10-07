@@ -147,6 +147,8 @@ class Event(models.Model):
     video = models.JSONField(null=True, blank=True, verbose_name="Vidéo")   # url, poster, durée, dimensions, légende
     # Événement en ligne : lien visible par tous, ou seulement dans le billet / l'invitation des participants
     online_link_public = models.BooleanField(default=False, verbose_name="Lien en ligne visible par tous")
+    # Fuseau horaire du lieu de l'événement (IANA : « Europe/Paris », « Africa/Douala »)
+    timezone = models.CharField(max_length=64, default='Europe/Paris', verbose_name="Fuseau horaire")
     # Thème de l'événement (« Bohème champêtre », « IA & climat ») : fil conducteur du mini-site
     theme = models.CharField(max_length=80, blank=True, default='', verbose_name="Thème")
 

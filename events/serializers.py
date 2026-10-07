@@ -76,6 +76,7 @@ class EventPublicSerializer(serializers.ModelSerializer):
             'ambiance',
             'ambiance_label',      # ambiance libre quand ambiance = « autre »
             'theme',               # thème de l'événement (fil conducteur du mini-site)
+            'timezone',            # fuseau du lieu (l'application affiche aussi l'heure locale du visiteur)
             'palette',             # couleurs choisies librement {primary, secondary}
             'subdomain',
             'cover_image',      # calculé — URL de l'image de couverture
@@ -147,7 +148,9 @@ class EventPublicSerializer(serializers.ModelSerializer):
             5:'MAI', 6:'JUIN', 7:'JUIL', 8:'AOÛ',
             9:'SEP', 10:'OCT', 11:'NOV', 12:'DÉC'
         }
-        return f"{obj.start_date.day} {mois[obj.start_date.month]}"
+        from .tz import local
+        start = local(obj.start_date, obj)               # jour dans le fuseau de l'événement
+        return f"{start.day} {mois[start.month]}"
 
     def get_confirmed_count(self, obj):
         """

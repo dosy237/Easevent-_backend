@@ -34,7 +34,7 @@ def _send_reminder_email(notification):
     context = {
         'first_name': user.first_name,
         'event_title': event.title,
-        'date': fr_datetime(event.start_date),
+        'date': fr_datetime(event.start_date, event),
         'location': 'En ligne' if event.is_online else (event.location_address or ''),
         'online_link': event.online_link if event.is_online else '',
         'dress_code': event.dress_code or '',

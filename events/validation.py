@@ -115,6 +115,13 @@ def clean_core(data, current=None):
                 raise EventInputError('Lien invalide : il doit commencer par https://', 'online_link')
             link = link.strip()
         out['online_link'] = link
+    if 'timezone' in data:
+        from .tz import is_valid
+        tz = data.get('timezone')
+        if tz:                                       # fuseau du téléphone de l'organisateur
+            if not is_valid(tz):
+                raise EventInputError('Fuseau horaire invalide.', 'timezone')
+            out['timezone'] = tz
     if creating or 'online_link_public' in data:
         out['online_link_public'] = _bool(data.get('online_link_public', False), 'online_link_public')
     if creating or 'cover_image' in data:

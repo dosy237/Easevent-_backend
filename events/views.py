@@ -388,7 +388,8 @@ def detail_evenement_organisateur(request, event_id):
     serializer = EventPublicSerializer(event, context={'request': request})
     return Response({
         # template_config (galerie…) : réservé à l'organisateur, pour l'écran « Modifier »
-        'event':       {**serializer.data, 'template_config': event.template_config or {}},
+        'event':       {**serializer.data, 'template_config': event.template_config or {},
+                        'video_public_id': event.video_public_id},
         'invitations': invitations_count,
     })
 

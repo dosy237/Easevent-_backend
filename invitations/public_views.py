@@ -228,7 +228,7 @@ def invitation_page(request, token):
             'organizer': event.organizer,
             'organizer_initials': initials(event.organizer.first_name, event.organizer.last_name),
             'cover_url': public_url(event.cover_image, request) if event.cover_image else '',
-            'date': fr_datetime(event.start_date),
+            'date': fr_datetime(event.start_date, event),
             'location': 'En ligne' if event.is_online else (event.location_address or ''),
             'price': price_label(event),
             'deeplink': f'easevent://i/{token}',

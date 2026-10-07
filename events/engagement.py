@@ -145,9 +145,9 @@ def share_page(request, event_id):
         response = render(request, 'events/share.html', {
             'event': event, 'page_url': page,
             'cover_url': public_url(cover, request) if cover else absolute_url('/static/app/share-default.png', request),
-            'date': fr_datetime(event.start_date) if event.start_date else '',
+            'date': fr_datetime(event.start_date, event) if event.start_date else '',
             'where': where, 'price': price_label(event),
-            'description': ' · '.join(x for x in (fr_datetime(event.start_date) if event.start_date else '', where) if x),
+            'description': ' · '.join(x for x in (fr_datetime(event.start_date, event) if event.start_date else '', where) if x),
             'open_url': open_url, 'store_url': store_url, 'platform': platform,
             'likes': event.likes.count(),
         })

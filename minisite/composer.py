@@ -85,7 +85,12 @@ def _sections(order, direction, rng, art, used_heroes):
         variants = catalog.SECTIONS[kind]['variants']
         if kind == 'hero':
             wanted = art.get('hero') if art.get('hero') in variants else None
-            variant = wanted if wanted and wanted not in used_heroes else _choose(rng, d['hero'], used_heroes)
+            if wanted and wanted not in used_heroes:
+                variant = wanted
+            elif any(h not in used_heroes for h in d['hero']):
+                variant = _choose(rng, d['hero'], used_heroes)
+            else:                                        # accueils de la direction déjà pris : un autre, inédit
+                variant = _choose(rng, variants, used_heroes)
         else:
             variant = rng.choice(variants)
         if kind in ('hero', 'footer'):

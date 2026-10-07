@@ -142,9 +142,12 @@ def plan_usage(event):
 # ─────────────────────────────────────────────────────────────
 # Formatage (email, SMS)
 # ─────────────────────────────────────────────────────────────
-def fr_datetime(dt):
-    dt = timezone.localtime(dt)
-    return f"{JOURS[dt.weekday()]} {dt.day} {MOIS[dt.month - 1]} {dt.year} · {dt:%H}h{dt:%M}"
+def fr_datetime(dt, event=None):
+    """Date dans le fuseau de l'événement, avec son nom (« · 15h00 (heure de Paris) »)."""
+    from events.tz import label, local
+    dt = local(dt, event) if event is not None else timezone.localtime(dt)
+    text = f"{JOURS[dt.weekday()]} {dt.day} {MOIS[dt.month - 1]} {dt.year} · {dt:%H}h{dt:%M}"
+    return f"{text} ({label(event)})" if event is not None else text
 
 
 def price_label(event):
@@ -176,7 +179,7 @@ def _build_email(inv, raw, request, reminder, connection):
         'organizer_first_name': _single_line(organizer.first_name) or org_name,
         'event_title': title,
         'cover_url': public_url(event.cover_image, request) if event.cover_image else '',
-        'date': fr_datetime(event.start_date),
+        'date': fr_datetime(event.start_date, event),
         'location': 'En ligne' if event.is_online else (event.location_address or ''),
         'price': price_label(event),
         'dress_code': event.dress_code or '',
@@ -226,7 +229,8 @@ def sms_body(inv, raw, request=None):
     """
     event = inv.event
     org = _single_line(inv.event.organizer.full_name) or 'Un organisateur'
-    start = timezone.localtime(event.start_date)
+    from events.tz import local
+    start = local(event.start_date, event)
     days = ['lun.', 'mar.', 'mer.', 'jeu.', 'ven.', 'sam.', 'dim.']
     when = f"{days[start.weekday()]} {start:%d/%m} à {start:%H}h{start:%M}"
     lines = [f"{org} vous invite à \"{_single_line(event.title)[:60]}\" le {when}."]

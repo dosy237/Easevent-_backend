@@ -63,7 +63,8 @@ def cancel_event(event, *, reason='event_cancelled', notify_guests=True):
         event.status = 'archived'
         event.save(update_fields=['deleted_at', 'status', 'updated_at'])
 
-    when = timezone.localtime(event.start_date)
+    from .tz import local
+    when = local(event.start_date, event)
     for user in guests:
         notify(user, Notification.Type.EVENT_CANCELLED, 'Événement annulé',
                f"{event.title} du {when:%d/%m} n'aura pas lieu."
@@ -105,8 +106,9 @@ def notify_changes(event, before):
     after = snapshot(event)
     parts = []
     if before['start'] != after['start']:
-        when = timezone.localtime(after['start'])
-        parts.append(f'nouvelle date : {when:%d/%m} à {when:%H}h{when:%M}')
+        from .tz import label, local
+        when = local(after['start'], event)
+        parts.append(f'nouvelle date : {when:%d/%m} à {when:%H}h{when:%M} ({label(event)})')
     if (before['place'], before['online']) != (after['place'], after['online']):
         parts.append('en ligne' if after['online'] else f"nouveau lieu : {after['place'][:80]}")
     elif after['online'] and before['link'] != after['link']:

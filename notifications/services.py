@@ -93,8 +93,9 @@ def _local_dt(day, hour):
     return timezone.make_aware(datetime.combine(day, time(hour, 0)), timezone.get_current_timezone())
 
 
-def _hhmm(dt):
-    dt = timezone.localtime(dt)
+def _hhmm(dt, event=None):
+    from events.tz import local
+    dt = local(dt, event) if event is not None else timezone.localtime(dt)
     return f'{dt:%H}:{dt:%M}'
 
 
@@ -107,13 +108,14 @@ def _reminders(user, now):
                .filter(user=user, status=Ticket.Status.GENERATED,
                        event__start_date__gt=now, event__start_date__lte=now + timedelta(days=7, hours=1),
                        event__deleted_at__isnull=True))
+    from events.tz import label, local
     for t in tickets:
         start = t.event.start_date
         day_start = _local_dt(timezone.localtime(start).date(), 8)
         steps = [
-            ('J-7', start - timedelta(days=7), 'Dans 7 jours', f'{t.event.title} · le {timezone.localtime(start):%d/%m} à {_hhmm(start)}'),
-            ('J-1', start - timedelta(days=1), 'Demain', f'{t.event.title} à {_hhmm(start)}'),
-            ('J0', min(day_start, start - timedelta(hours=2)), "Aujourd'hui", f'{t.event.title} à {_hhmm(start)}'),
+            ('J-7', start - timedelta(days=7), 'Dans 7 jours', f'{t.event.title} · le {local(start, t.event):%d/%m} à {_hhmm(start, t.event)} ({label(t.event)})'),
+            ('J-1', start - timedelta(days=1), 'Demain', f'{t.event.title} à {_hhmm(start, t.event)} ({label(t.event)})'),
+            ('J0', min(day_start, start - timedelta(hours=2)), "Aujourd'hui", f'{t.event.title} à {_hhmm(start, t.event)} ({label(t.event)})'),
         ]
         due = [s for s in steps if s[1] <= now]
         if not due:
