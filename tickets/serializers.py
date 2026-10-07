@@ -41,6 +41,7 @@ class TicketSerializer(serializers.ModelSerializer):
             'online_link':        e.online_link if e.is_online and e.online_link and
                                   (obj.status == Ticket.Status.GENERATED or e.online_link_public) else None,
             'pass_word':          pass_word(e),
+            'timezone':           e.timezone,
         }
 
     def get_participant(self, obj):
