@@ -53,3 +53,4 @@ Thumbs.db
 .docker/
 /private_media/
 data/minisite/
+dump.rdb
