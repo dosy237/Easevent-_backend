@@ -1,6 +1,4 @@
 from django.contrib import admin
-from .models import Invitation, RSVPQuestion, RSVPResponse
+from .models import Invitation
 
 admin.site.register(Invitation)
-admin.site.register(RSVPQuestion)
-admin.site.register(RSVPResponse)

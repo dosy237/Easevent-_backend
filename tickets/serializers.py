@@ -34,6 +34,7 @@ class TicketSerializer(serializers.ModelSerializer):
             'dress_code':         e.dress_code,
             'organizer_name':     e.organizer.full_name,
             'map':                _map(e),
+            'has_rsvp':           e.rsvp_questions.exists(),     # questions RSVP : « Mes réponses » (M19)
         }
 
     def get_participant(self, obj):

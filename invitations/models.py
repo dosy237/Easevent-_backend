@@ -2,10 +2,8 @@
 invitations/models.py
 ═══════════════════════════════════════════════════════════════
 Modèles de l'application "invitations".
-Contient 3 tables :
+Contient la table :
   - Invitation    → les invitations personnelles
-  - RSVPQuestion  → les questions personnalisées de confirmation
-  - RSVPResponse  → les réponses des invités aux questions
 ═══════════════════════════════════════════════════════════════
 """
 
@@ -157,96 +155,4 @@ class Invitation(models.Model):
         )
 
 
-# ─────────────────────────────────────────────────────────────
-# TABLE : rsvp_questions
-# ─────────────────────────────────────────────────────────────
-class RSVPQuestion(models.Model):
-    """
-    Questions personnalisées posées à l'invité lors de sa confirmation.
-
-    Exemples selon le type d'événement :
-    ──────────────────────────────────────
-    Mariage      → "Avez-vous des restrictions alimentaires ?" (text)
-    Mariage      → "Avez-vous besoin de la navette ?" (yes_no)
-    Conférence   → "Quelle session vous intéresse ?" (radio)
-    Anniversaire → "Choix du menu ?" (checkbox)
-
-    Maximum 5 questions par événement.
-    """
-
-    class QuestionType(models.TextChoices):
-        TEXT     = 'text',     'Texte libre'
-        RADIO    = 'radio',    'Choix unique'
-        CHECKBOX = 'checkbox', 'Choix multiple'
-        YES_NO   = 'yes_no',   'Oui / Non'
-
-    id    = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    event = models.ForeignKey(
-        'events.Event',
-        on_delete    = models.CASCADE,
-        related_name = 'rsvp_questions',
-        verbose_name = "Événement"
-    )
-
-    question_text = models.TextField(verbose_name="Texte de la question")
-    question_type = models.CharField(max_length=10, choices=QuestionType.choices)
-    is_required   = models.BooleanField(default=False, verbose_name="Obligatoire")
-    order = models.PositiveSmallIntegerField(default=0, verbose_name="Ordre d'affichage")
-
-    # Options pour les types radio et checkbox
-    # Exemple : ["Végétarien", "Vegan", "Sans gluten", "Aucune restriction"]
-    options = models.JSONField(
-        null  = True,
-        blank = True,
-        verbose_name = "Options disponibles (pour radio et checkbox)"
-    )
-
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        db_table = 'rsvp_questions'
-        ordering = ['order']
-
-    def __str__(self):
-        return f"Q{self.order}: {self.question_text[:50]}... ({self.question_type})"
-
-
-# ─────────────────────────────────────────────────────────────
-# TABLE : rsvp_responses
-# ─────────────────────────────────────────────────────────────
-class RSVPResponse(models.Model):
-    """
-    Réponse d'un invité à une question RSVP spécifique.
-
-    Liée à la fois à la question et à l'invitation, ce qui
-    permet de faire des statistiques croisées dans le dashboard.
-
-    unique_together garantit qu'un invité ne répond qu'une
-    seule fois à chaque question.
-    """
-
-    id         = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    question   = models.ForeignKey(
-        RSVPQuestion,
-        on_delete    = models.CASCADE,
-        related_name = 'responses'
-    )
-    invitation = models.ForeignKey(
-        Invitation,
-        on_delete    = models.CASCADE,
-        related_name = 'rsvp_responses'
-    )
-
-    # La réponse est toujours stockée en texte.
-    # Pour les checkboxes (choix multiple), c'est un JSON sérialisé :
-    # ex: '["Option A", "Option B"]'
-    answer = models.TextField(verbose_name="Réponse de l'invité")
-
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        db_table        = 'rsvp_responses'
-        unique_together = [['question', 'invitation']]
-
-    def __str__(self):
-        return f"Réponse à '{self.question.question_text[:30]}...'"
+# Les questions RSVP et les réponses des invités sont dans l'app « rsvp ».

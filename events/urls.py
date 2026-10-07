@@ -1,6 +1,7 @@
 from django.urls import path
 from . import views
 from invitations import organizer_views as guests
+from rsvp import views as rsvp
 
 urlpatterns = [
     # ── Événements publics (visiteurs) ────────────────────────
@@ -23,5 +24,11 @@ urlpatterns = [
     path('<uuid:event_id>/invite/',         guests.invite,                         name='event-invite'),
     path('<uuid:event_id>/remind-pending/', guests.remind_pending,                 name='event-remind-pending'),
     path('<uuid:event_id>/participants/export-link/', guests.export_link,          name='event-guests-export-link'),
+    # ── Questions RSVP (M14 organisateur, M19 invité) ──────────
+    path('<uuid:event_id>/rsvp-questions/',                    rsvp.questions,       name='rsvp-questions'),
+    path('<uuid:event_id>/rsvp-questions/reorder/',            rsvp.reorder,         name='rsvp-reorder'),
+    path('<uuid:event_id>/rsvp-questions/<uuid:question_id>/', rsvp.question,        name='rsvp-question'),
+    path('<uuid:event_id>/rsvp-answers/',                      rsvp.answers_summary, name='rsvp-answers'),
+    path('<uuid:event_id>/rsvp/',                              rsvp.my_rsvp,         name='rsvp-mine'),
     path('participants/export/<str:token>/', guests.export_csv,                    name='event-guests-export'),
 ]

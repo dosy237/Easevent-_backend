@@ -82,6 +82,7 @@ INSTALLED_APPS = [
     'notifications',
     'messaging',
     'social',
+    'rsvp',
 ]
 
 # ─────────────────────────────────────────────────────────────
@@ -167,6 +168,7 @@ REST_FRAMEWORK = {
         'phone_code':     '5/hour',
         'static_map':     '120/min',
         'friend_requests': '50/day',
+        'rsvp':            '120/hour',     # questions RSVP (organisateur) et réponses
     },
 }
 

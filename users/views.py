@@ -702,6 +702,11 @@ def export_data_view(request):
             for m in __import__('messaging.models', fromlist=['Message']).Message.objects
             .filter(sender=user, kind='text').select_related('conversation__event').order_by('-created_at')[:500]
         ],
+        'rsvp_answers': [
+            {'event': a.question.event.title, 'question': a.question.label, 'answer': a.value,
+             'updated_at': a.updated_at.isoformat()}
+            for a in user.rsvp_answers.select_related('question__event').order_by('-updated_at')[:500]
+        ],
         'notification_preferences': user.notification_prefs or {},
         'notifications': [
             {'type': n.type, 'text': f'{n.title} {n.body}'.strip(), 'created_at': n.created_at.isoformat(),

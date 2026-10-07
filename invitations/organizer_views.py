@@ -107,6 +107,8 @@ def _guest_rows(event):
     tickets = {t.user_id: t for t in Ticket.objects.filter(
         event=event, user_id__in=user_ids, status__in=Ticket.ACTIVE)}
     now = timezone.now()
+    from rsvp.services import answers_by_user
+    rsvp = answers_by_user(event, user_ids)
 
     rows, counts = [], {'confirmed': 0, 'pending': 0, 'declined': 0, 'total': 0}
     for inv in invitations:
@@ -151,6 +153,7 @@ def _guest_rows(event):
             'responded_at':    inv.responded_at.isoformat() if inv.responded_at else None,
             'reminded_at':     inv.reminded_at.isoformat() if inv.reminded_at else None,
             'can_remind':      can_remind(inv, now),
+            'rsvp':            rsvp.get(inv.invited_user_id, []),       # réponses aux questions (M19)
             # Compatibilité avec l'ancien écran (E08)
             'user': ({'id': str(user.id), 'first_name': user.first_name, 'last_name': user.last_name,
                       'avatar_url': user.avatar_url} if user else {'email': inv.email or '', 'phone_number': mask_phone(phone)}),
@@ -253,18 +256,22 @@ def export_csv(request, token):
     rows, _ = _guest_rows(event)
     buf = io.StringIO()
     writer = csv.writer(buf, delimiter=';')
-    writer.writerow(['Nom', 'Email', 'Téléphone', 'Canal', 'Statut', 'Invité le', 'Répondu le'])
-
     def safe(value):
         # Neutralise les formules à l'ouverture dans un tableur (injection CSV)
         value = str(value or '')
         return "'" + value if value[:1] in ('=', '+', '-', '@', '\t', '\r') else value
 
+    questions = list(event.rsvp_questions.all())
+    writer.writerow(['Nom', 'Email', 'Téléphone', 'Canal', 'Statut', 'Invité le', 'Répondu le']
+                    + [safe(q.label) for q in questions])
+
     for r in rows:
         writer.writerow([safe(r['name']), safe(r['email']), safe(r['phone']),
                          {'member': 'Membre', 'email': 'Email', 'phone': 'SMS'}[r['kind']],
                          STATUS_LABELS.get(r['display_status'], r['display_status']),
-                         (r['sent_at'] or '')[:10], (r['responded_at'] or '')[:10]])
+                         (r['sent_at'] or '')[:10], (r['responded_at'] or '')[:10]]
+                        + [safe(next((x['display'] for x in r['rsvp'] if x['question_id'] == str(q.id)), ''))
+                           for q in questions])
     response = HttpResponse('﻿' + buf.getvalue(), content_type='text/csv; charset=utf-8')
     response['Content-Disposition'] = f'attachment; filename="invites-{str(event.id)[:8]}.csv"'
     response['Cache-Control'] = 'no-store'

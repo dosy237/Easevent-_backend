@@ -90,6 +90,13 @@ def ticket_counts(request):
 @permission_classes([IsAuthenticated])
 def take_ticket(request, event_id):
     event = get_object_or_404(Event, pk=event_id, deleted_at__isnull=True)
+    # Questions RSVP (M19) : seulement pour un nouveau ticket, et si l'événement lui est accessible
+    from rsvp.services import RsvpError, can_answer, check_required
+    if can_answer(event, request.user) and not services.active_ticket(event, request.user):
+        try:
+            check_required(event, request.user, request.data.get('rsvp_answers'))
+        except RsvpError as exc:
+            return Response(exc.payload(), status=exc.status)
     try:
         ticket, created = services.create_pending_ticket(event, request.user)
         # Gratuit : validation directe (M24 « Participer — ticket gratuit »)

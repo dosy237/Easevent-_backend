@@ -69,6 +69,12 @@ def repondre_invitation(request, invitation_id):
 
     ticket = None
     if new_status == 'confirmed':
+        # Questions RSVP (M19) : réponses envoyées avec l'acceptation, obligatoires vérifiées
+        from rsvp.services import RsvpError, check_required
+        try:
+            check_required(invitation.event, request.user, request.data.get('rsvp_answers'))
+        except RsvpError as exc:
+            return Response(exc.payload(), status=exc.status)
         # Accepter crée le ticket « en attente » à valider dans Mes tickets (MVP §5)
         try:
             ticket, _ = create_pending_ticket(invitation.event, request.user, invitation=invitation)
