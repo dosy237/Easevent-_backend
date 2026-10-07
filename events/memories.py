@@ -132,15 +132,15 @@ def _notify_comment(event, author, body):
     from notifications.models import Notification
     from notifications.services import notify
     preview = body if len(body) <= 100 else body[:97] + '…'
-    text = f'{author.first_name} : « {preview} »'
+    text = f'a commenté « {event.title} » : « {preview} »'
     existing = Notification.objects.filter(user=event.organizer, type=Notification.Type.EVENT_COMMENT,
                                            event=event, read_at__isnull=True).first()
     if existing:
-        existing.body, existing.actor, existing.created_at = text[:255], author, timezone.now()
-        existing.save(update_fields=['body', 'actor', 'created_at'])
+        existing.title, existing.body = author.full_name[:160], text[:255]
+        existing.actor, existing.created_at = author, timezone.now()
+        existing.save(update_fields=['title', 'body', 'actor', 'created_at'])
         return
-    notify(event.organizer, Notification.Type.EVENT_COMMENT, f'Commentaire sur {event.title}'[:160], text,
-           actor=author, event=event)
+    notify(event.organizer, Notification.Type.EVENT_COMMENT, author.full_name, text, actor=author, event=event)
 
 
 @api_view(['DELETE'])

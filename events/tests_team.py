@@ -249,6 +249,7 @@ class TeamTest(TestCase):
         self.assertEqual(Notification.objects.filter(user=self.maman, type='event_comment').count(), 1)
         n.refresh_from_db()
         self.assertIn('Et encore bravo', n.body)
+        self.assertEqual(n.title, 'Léa T')
         got = self.m.get(f'{self.url}/comments/').data
         self.assertEqual((got['count'], got['open'], got['comments'][0]['can_delete']), (2, True, True))
         cid = got['comments'][0]['id']
