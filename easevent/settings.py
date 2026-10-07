@@ -338,6 +338,8 @@ STRIPE_PRICE_PRO_ANNUAL       = config('STRIPE_PRICE_PRO_ANNUAL', default='')
 # ─────────────────────────────────────────────────────────────
 # Invités par événement selon le plan (cahier des charges §2.5) — None = illimité
 PLAN_GUEST_LIMITS = {'free': 50, 'standard': 500, 'pro': None}
+# Événements créés par mois calendaire selon le plan — None = illimité (events/quota.py)
+PLAN_EVENT_LIMITS = {'free': 1, 'standard': None, 'pro': None}
 INVITE_BATCH_MAX     = 100   # adresses / numéros par envoi
 INVITE_REMIND_DELAY_HOURS = 24  # une relance par invité et par jour au plus
 # ── Cartes et adresses (events/geo.py) ─────────────────────────────────

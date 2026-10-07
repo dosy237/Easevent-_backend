@@ -296,29 +296,47 @@ def creer_evenement(request):
         subdomain = f"{base_slug}-{counter}"
         counter  += 1
 
+    from django.db import transaction
+    from users.models import User
+    from . import quota as plan_quota
     try:
-        event = Event.objects.create(
-            organizer        = request.user,
-            event_type       = data['event_type'],
-            visibility       = visibility,
-            status           = 'draft',  # Toujours brouillon à la création
-            subdomain        = subdomain,
-            **core,
-            **ticketing,
-        )
+        with transaction.atomic():
+            # Verrou sur l'organisateur : deux créations simultanées ne dépassent pas le quota
+            User.objects.select_for_update().only('id').get(pk=request.user.pk)
+            plan_quota.check_create(request.user)
+            event = Event.objects.create(
+                organizer        = request.user,
+                event_type       = data['event_type'],
+                visibility       = visibility,
+                status           = 'draft',  # Toujours brouillon à la création
+                subdomain        = subdomain,
+                **core,
+                **ticketing,
+            )
 
         serializer = EventPublicSerializer(event, context={'request': request})
         return Response({
             'message': 'Événement créé avec succès.',
+            'quota':   plan_quota.usage(request.user),
             'event':   serializer.data,
         }, status=status.HTTP_201_CREATED)
 
+    except plan_quota.QuotaError as exc:
+        return Response(exc.payload(), status=status.HTTP_403_FORBIDDEN)
     except Exception:
         logger.exception("Erreur lors de la création d'un événement")
         return Response(
             {'detail': "Impossible de créer l'événement pour le moment. Réessayez."},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def quota_evenements(request):
+    """GET /api/events/quota/ — événements restants ce mois-ci selon le plan."""
+    from .quota import usage
+    return Response(usage(request.user))
 
 
 # ════════════════════════════════════════════════════════════════
@@ -490,8 +508,15 @@ def publier_evenement(request, event_id):
     visibility = data.get('visibility', event.visibility)
     if visibility not in VISIBILITIES:
         return Response({'detail': 'Visibilité invalide (public ou private).'}, status=status.HTTP_400_BAD_REQUEST)
+    from .quota import QuotaError, check_publish
+    try:
+        check_publish(event)
+    except QuotaError as exc:
+        return Response(exc.payload(), status=status.HTTP_403_FORBIDDEN)
     event.status     = 'published'
     event.visibility = visibility
+    if not event.published_at:
+        event.published_at = timezone.now()
     event.save()
 
     # Par celui-ci :

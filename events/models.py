@@ -193,6 +193,9 @@ class Event(models.Model):
     # ── Métriques ─────────────────────────────────────────────
     view_count = models.PositiveIntegerField(default=0, verbose_name="Nombre de vues")
 
+    # Première publication : un événement publié puis supprimé reste compté dans le quota du plan
+    published_at = models.DateTimeField(null=True, blank=True, verbose_name="Date de première publication")
+
     # ── Soft delete et timestamps ─────────────────────────────
     deleted_at = models.DateTimeField(null=True, blank=True, verbose_name="Date suppression")
     created_at = models.DateTimeField(auto_now_add=True)

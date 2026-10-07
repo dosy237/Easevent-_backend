@@ -32,17 +32,17 @@ INTERVALS = {'monthly': 'month', 'annual': 'year'}
 PLANS = {
     'free': {
         'name': 'Gratuit', 'monthly': 0, 'annual': 0,
-        'features': ["Jusqu'à 50 invités par événement", 'Événements illimités', 'Invitations par email, SMS et contacts',
+        'features': ['1 événement par mois', "Jusqu'à 50 invités par événement", 'Invitations par email, SMS et contacts',
                      'Billetterie et paiements en ligne', 'Messagerie avec vos invités', 'Questions RSVP'],
     },
     'standard': {
         'name': 'Standard', 'monthly': 999, 'annual': 9990, 'highlight': True,
-        'features': ["Jusqu'à 500 invités par événement", 'Export de la liste des invités (Excel / CSV)',
+        'features': ['Événements illimités', "Jusqu'à 500 invités par événement", 'Export de la liste des invités (Excel / CSV)',
                      'Tout le plan Gratuit', 'Support prioritaire par email'],
     },
     'pro': {
         'name': 'Pro', 'monthly': 2499, 'annual': 24990,
-        'features': ['Invités illimités', 'Export de la liste des invités (Excel / CSV)',
+        'features': ['Événements illimités', 'Invités illimités', 'Export de la liste des invités (Excel / CSV)',
                      'Tout le plan Standard', 'Accompagnement personnalisé'],
     },
 }
@@ -91,7 +91,8 @@ def state(user):
 def catalog():
     return [{'id': key, 'name': p['name'], 'monthly': p['monthly'], 'annual': p['annual'],
              'highlight': p.get('highlight', False), 'features': p['features'],
-             'guest_limit': settings.PLAN_GUEST_LIMITS.get(key)} for key, p in PLANS.items()]
+             'guest_limit': settings.PLAN_GUEST_LIMITS.get(key),
+             'event_limit': settings.PLAN_EVENT_LIMITS.get(key)} for key, p in PLANS.items()]
 
 
 # ─────────────────────────────────────────────────────────────

@@ -10,6 +10,7 @@ urlpatterns = [
 
     # ── Mes événements (organisateur) ─────────────────────────
     path('mes-evenements/',                 views.mes_evenements,                  name='mes-evenements'),
+    path('quota/',                          views.quota_evenements,                name='events-quota'),
     path('create/',                         views.creer_evenement,                 name='creer-evenement'),
     path('upload-image/',                   views.upload_image,                    name='upload-image'),
 

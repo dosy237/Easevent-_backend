@@ -35,7 +35,9 @@ def _stripe_down():
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def overview(request):
-    return Response({'plans': services.catalog(), 'subscription': services.state(request.user)})
+    from events.quota import usage
+    return Response({'plans': services.catalog(), 'subscription': services.state(request.user),
+                     'event_quota': usage(request.user)})
 
 
 @api_view(['POST'])

@@ -171,6 +171,9 @@ class EventAPITest(TestCase):
             'location_address': 'Lyon',
             'visibility':       'public',
         }
+        # L'organisateur a déjà des événements ce mois-ci : plan Standard (illimité, cf. tests_quota)
+        self.user.subscription_plan = 'standard'
+        self.user.save(update_fields=['subscription_plan'])
         response = self.client.post('/api/events/create/', payload, format='json')
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 

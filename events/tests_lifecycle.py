@@ -239,6 +239,8 @@ class LifecycleTest(TestCase):
         for extra in cases:
             r = self.orga_c.post('/api/events/create/', {**base, **extra}, format='json')
             self.assertEqual(r.status_code, 400, (extra, r.data))
+        self.orga.subscription_plan = 'standard'          # déjà 2 événements ce mois-ci (quota Gratuit = 1)
+        self.orga.save(update_fields=['subscription_plan'])
         r = self.orga_c.post('/api/events/create/', base, format='json')
         self.assertEqual(r.status_code, 201, r.data)
         eid = r.data['event']['id']
