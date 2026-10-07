@@ -349,15 +349,16 @@ PLAN_EVENT_LIMITS = {'free': 1, 'standard': None, 'pro': None}
 # Générations par événement selon le plan — None = illimité
 MINISITE_GENERATION_LIMITS = {'free': 3, 'standard': 15, 'pro': None}
 MINISITE_ASYNC = config('MINISITE_ASYNC', default=True, cast=bool)    # False : génération dans la requête
-MINISITE_AI_TIMEOUT = config('MINISITE_AI_TIMEOUT', default=25, cast=int)
+MINISITE_AI_TIMEOUT = config('MINISITE_AI_TIMEOUT', default=40, cast=int)
 # Clés gratuites : Google AI Studio, Groq, OpenRouter, Mistral (facultatives)
+# Modèles : plusieurs possibles, séparés par des virgules (qualité d'abord, puis secours rapide)
 GEMINI_API_KEY     = config('GEMINI_API_KEY', default='')
 GROQ_API_KEY       = config('GROQ_API_KEY', default='')
 OPENROUTER_API_KEY = config('OPENROUTER_API_KEY', default='')
 MISTRAL_API_KEY    = config('MISTRAL_API_KEY', default='')
 MINISITE_MODELS = {
-    'gemini':     config('MINISITE_GEMINI_MODEL', default='gemini-flash-latest'),
-    'groq':       config('MINISITE_GROQ_MODEL', default='llama-3.3-70b-versatile'),
+    'gemini':     config('MINISITE_GEMINI_MODEL', default='gemini-3.5-flash,gemini-flash-lite-latest'),
+    'groq':       config('MINISITE_GROQ_MODEL', default='llama-3.3-70b-versatile,openai/gpt-oss-120b'),
     'openrouter': config('MINISITE_OPENROUTER_MODEL', default='meta-llama/llama-3.3-70b-instruct:free'),
     'mistral':    config('MINISITE_MISTRAL_MODEL', default='mistral-small-latest'),
 }

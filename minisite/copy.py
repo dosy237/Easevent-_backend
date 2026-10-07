@@ -24,6 +24,17 @@ KICKERS = {
 }
 DEFAULT_KICKERS = ('Vous êtes invités', 'Rendez-vous', 'Un moment à partager', 'À ne pas manquer')
 
+SUBTITLES = {
+    'mariage': ('Nous serions heureux de vous compter parmi nous.', 'Venez célébrer notre union à nos côtés.', 'Un jour, deux cœurs, tous nos proches.'),
+    'anniversaire': ('Venez souffler les bougies avec nous.', 'Une fête entre proches, comme on les aime.', 'On compte sur vous pour fêter ça.'),
+    'concert': ('Une nuit de musique à vivre en live.', 'Le son, la scène, et vous.', 'Rendez-vous devant la scène.'),
+    'festival': ('Plusieurs jours de musique et de rencontres.', 'Vivez le festival de l’intérieur.', 'Le rendez-vous de la saison.'),
+    'conference': ('Des idées, des échanges, des rencontres.', 'Une journée pour comprendre et partager.', 'Venez apprendre et échanger.'),
+    'seminaire': ('Une journée pour avancer ensemble.', 'Réfléchir, échanger, décider.', 'Le temps d’un séminaire.'),
+    'gala': ('Une soirée d’exception.', 'Élégance et convivialité au rendez-vous.', 'Une soirée placée sous le signe du prestige.'),
+}
+DEFAULT_SUBTITLES = ('Un moment à partager ensemble.', 'Nous avons hâte de vous y retrouver.', 'Vous êtes chaleureusement invités.')
+
 DIVIDERS = {
     'mariage': ('Deux histoires, une seule aventure', 'L’amour se fête à plusieurs', 'Merci d’être là pour nous'),
     'anniversaire': ('Les plus belles années sont devant', 'Venez comme vous êtes', 'Une fête, des souvenirs'),
@@ -69,7 +80,8 @@ def cta_label(f):
 
 def fallback(f, direction, rng):
     t = f['type']
-    subtitle = ' · '.join(x for x in (f['date_text'].capitalize(), f['city'] or ('En ligne' if f['is_online'] else '')) if x)
+    # La date et le lieu sont affichés par l'application à partir de l'événement : ici, une phrase d'ambiance
+    subtitle = _pick(rng, SUBTITLES.get(t, DEFAULT_SUBTITLES))
     intro_body = f['description'] or INTRO_FALLBACK.get(t, DEFAULT_INTRO)
     paid = f['is_paid']
     return {

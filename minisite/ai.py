@@ -26,6 +26,9 @@ from . import catalog
 
 logger = logging.getLogger(__name__)
 
+# Rôles où la rapidité prime (le modèle de secours rapide passe en premier)
+FAST_FIRST = {'review'}
+
 # Ne reçoivent jamais de données saisies par l'utilisateur (titres, descriptions…)
 SENSITIVE_FORBIDDEN = {'mistral'}
 
@@ -44,12 +47,13 @@ def _key(provider):
     return getattr(settings, f'{provider.upper()}_API_KEY', '') or ''
 
 
-def _model(provider):
-    return settings.MINISITE_MODELS.get(provider, '')
+def _models(provider):
+    """Modèles d'un fournisseur, dans l'ordre (réglage séparé par des virgules : qualité puis secours)."""
+    return [m.strip() for m in str(settings.MINISITE_MODELS.get(provider, '')).split(',') if m.strip()]
 
 
 def configured(provider):
-    return bool(_key(provider) and _model(provider))
+    return bool(_key(provider) and _models(provider))
 
 
 def _extract_json(text):
@@ -64,10 +68,10 @@ def _extract_json(text):
         raise ProviderError('réponse non JSON')
 
 
-def call(provider, system, user, timeout=None):
+def call(provider, model, system, user, timeout=None):
     timeout = timeout or settings.MINISITE_AI_TIMEOUT
     if provider == 'gemini':
-        url = f'https://generativelanguage.googleapis.com/v1beta/models/{_model(provider)}:generateContent'
+        url = f'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent'
         body = {
             'systemInstruction': {'parts': [{'text': system}]},
             'contents': [{'role': 'user', 'parts': [{'text': user}]}],
@@ -83,7 +87,7 @@ def call(provider, system, user, timeout=None):
         return _extract_json(text)
     if provider in OPENAI_STYLE:
         body = {
-            'model': _model(provider), 'temperature': 0.9,
+            'model': model, 'temperature': 0.9,
             'messages': [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}],
             'response_format': {'type': 'json_object'},
         }
@@ -109,18 +113,22 @@ def run_role(role, system, user, validate, providers=None):
             continue
         if not configured(provider):
             continue
-        started = time.monotonic()
-        try:
-            result = validate(call(provider, system, user))
-            if not result:
-                raise ProviderError('réponse invalide')
-            log.append({'role': role, 'provider': provider, 'model': _model(provider), 'ok': True,
-                        'ms': int((time.monotonic() - started) * 1000)})
-            return result, log, provider
-        except (ProviderError, requests.RequestException, ValueError, TypeError) as exc:
-            log.append({'role': role, 'provider': provider, 'model': _model(provider), 'ok': False,
-                        'ms': int((time.monotonic() - started) * 1000), 'error': str(exc)[:120]})
-            logger.info('Mini-site : %s indisponible pour %s (%s)', provider, role, exc)
+        models = _models(provider)
+        if role in FAST_FIRST:
+            models = models[::-1]                    # relecture : le modèle rapide d'abord
+        for model in models:
+            started = time.monotonic()
+            try:
+                result = validate(call(provider, model, system, user))
+                if not result:
+                    raise ProviderError('réponse invalide')
+                log.append({'role': role, 'provider': provider, 'model': model, 'ok': True,
+                            'ms': int((time.monotonic() - started) * 1000)})
+                return result, log, provider
+            except (ProviderError, requests.RequestException, ValueError, TypeError) as exc:
+                log.append({'role': role, 'provider': provider, 'model': model, 'ok': False,
+                            'ms': int((time.monotonic() - started) * 1000), 'error': str(exc)[:120]})
+                logger.info('Mini-site : %s/%s indisponible pour %s (%s)', provider, model, role, exc)
     return None, log, None
 
 
