@@ -32,6 +32,7 @@ PREF_OF_TYPE = {
     'daily_summary': 'daily_summary',
     'guest_response': 'guest_responses',
     'message_received': 'messages',
+    'question_to_answer': 'messages',
 }
 
 
