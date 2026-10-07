@@ -94,6 +94,7 @@ INSTALLED_APPS = [
     'social',
     'rsvp',
     'minisite',
+    'adminpanel',
     'channels',
 ]
 
@@ -184,6 +185,7 @@ REST_FRAMEWORK = {
         'billing':         '30/hour',      # abonnements : sessions Stripe
         'checkin':         '120/min',      # scanner de tickets à l'entrée
         'minisite':        '20/hour',
+        'admin':           '600/min',      # tableau de bord de l'équipe
         'likes':           '120/min',      # « J'aime » (aimer / retirer)
         'share':           '30/hour',
         'video':           '20/hour',      # signatures d'envoi de vidéo (Cloudinary)      # partages d'événements à des amis      # générations de mini-site (appels aux modèles d'IA)

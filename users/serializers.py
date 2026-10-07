@@ -92,6 +92,9 @@ def user_payload(user):
         # Téléphone masqué ; « phone_verified » faux = numéro saisi mais pas encore confirmé
         'phone':               _masked_phone(user),
         'phone_verified':      user.phone_verified_at is not None,
+        # Accès au tableau de bord de l'équipe (le serveur revérifie chaque appel)
+        'is_staff':            user.is_staff,
+        'is_superuser':        user.is_superuser,
     }
 
 

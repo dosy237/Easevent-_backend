@@ -16,6 +16,7 @@ from invitations import organizer_views as guests, public_views as invitation_pa
 from events import engagement as event_engagement
 from events import fx as event_fx
 
+from adminpanel import views as admin_views
 urlpatterns = [
     # Interface d'administration Django
     path('admin/', admin.site.urls), 
@@ -42,6 +43,8 @@ urlpatterns = [
     # Pages web publiques : lien d'invitation (M31) et confidentialité
     path('i/<str:token>/',     invitation_pages.invitation_page, name='invitation-page'),
     path('e/<uuid:event_id>/', event_engagement.share_page,      name='event-share-page'),
+    path('api/admin/', include('adminpanel.urls')),
+    path('api/announcements/', admin_views.live_announcements, name='announcements-live'),
     path('api/fx/rates/',      event_fx.rates,                   name='fx-rates'),
     path('confidentialite/',   invitation_pages.privacy_page,    name='privacy-page'),
     path('.well-known/assetlinks.json', invitation_pages.assetlinks, name='assetlinks'),

@@ -758,37 +758,7 @@ def delete_account_view(request):
         return Response({'detail': 'Mot de passe incorrect.'},
                         status=status.HTTP_400_BAD_REQUEST)
 
-    # Ses événements à venir sont annulés : invités prévenus, tickets payés remboursés
-    from events.lifecycle import cancel_event
-    from events.models import Event
-    for event in Event.objects.filter(organizer=user, deleted_at__isnull=True, end_date__gte=timezone.now()):
-        cancel_event(event)
-    Event.objects.filter(organizer=user, deleted_at__isnull=True).update(deleted_at=timezone.now(), status='archived')
-    # Ses propres tickets libèrent leur place ; abonnement arrêté ; appareils oubliés
-    from tickets.models import Ticket
-    Ticket.objects.filter(user=user, status__in=Ticket.ACTIVE).update(status=Ticket.Status.CANCELLED)
-    try:
-        from subscriptions.services import cancel_now_for_deleted_account
-        cancel_now_for_deleted_account(user)
-    except Exception:
-        logger.exception("Abonnement non résilié lors de la suppression d'un compte")
-    user.device_tokens.all().delete()
-
-    # Anonymisation immédiate des données personnelles (RGPD)
-    user.phone_number = None
-    user.phone_hash = None
-    user.email            = f'deleted_{user.id}@deleted.easevent'
-    user.first_name       = 'Utilisateur'
-    user.last_name        = 'Supprimé'
-    user.avatar_url       = None
-    user.bio              = ''
-    user.marketing_opt_in = False
-    user.is_active        = False
-    user.deleted_at       = timezone.now()   # soft delete
-    user.set_unusable_password()
-    user.save()
-
-    _blacklist_all_tokens(user)
+    erase_account(user)
     return Response({'detail': 'Compte supprimé avec succès.'})
 
 
@@ -837,3 +807,38 @@ def phone_set_view(request):
         set_pending(user, e164)
         user.save(update_fields=['phone_number', 'updated_at'])
     return Response({'user': user_payload(user)})
+
+
+def erase_account(user):
+    """Suppression RGPD (par l'utilisateur ou par un administrateur) : événements annulés, données anonymisées."""
+    # Ses événements à venir sont annulés : invités prévenus, tickets payés remboursés
+    from events.lifecycle import cancel_event
+    from events.models import Event
+    for event in Event.objects.filter(organizer=user, deleted_at__isnull=True, end_date__gte=timezone.now()):
+        cancel_event(event)
+    Event.objects.filter(organizer=user, deleted_at__isnull=True).update(deleted_at=timezone.now(), status='archived')
+    # Ses propres tickets libèrent leur place ; abonnement arrêté ; appareils oubliés
+    from tickets.models import Ticket
+    Ticket.objects.filter(user=user, status__in=Ticket.ACTIVE).update(status=Ticket.Status.CANCELLED)
+    try:
+        from subscriptions.services import cancel_now_for_deleted_account
+        cancel_now_for_deleted_account(user)
+    except Exception:
+        logger.exception("Abonnement non résilié lors de la suppression d'un compte")
+    user.device_tokens.all().delete()
+
+    # Anonymisation immédiate des données personnelles (RGPD)
+    user.phone_number = None
+    user.phone_hash = None
+    user.email            = f'deleted_{user.id}@deleted.easevent'
+    user.first_name       = 'Utilisateur'
+    user.last_name        = 'Supprimé'
+    user.avatar_url       = None
+    user.bio              = ''
+    user.marketing_opt_in = False
+    user.is_active        = False
+    user.deleted_at       = timezone.now()   # soft delete
+    user.set_unusable_password()
+    user.save()
+
+    _blacklist_all_tokens(user)
