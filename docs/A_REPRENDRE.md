@@ -110,7 +110,7 @@ Le serveur envoie les push via le service Expo (qui relaie vers Firebase / Apple
 ## 9. Messagerie instantanée (WebSocket) — à déployer
 
 Service `realtime` (daphne, Django Channels + Redis) ajouté dans `docker-compose.yml`, port
-local 8010. Messages, « en train d'écrire », accusés de lecture et badges arrivent en direct.
+local 18010 (8010 est déjà pris sur le serveur). Messages, « en train d'écrire », accusés de lecture et badges arrivent en direct.
 - [ ] `docker compose up -d --build` démarre aussi `realtime` (vérifier `docker compose ps`).
 - [ ] nginx du serveur : reprendre le bloc `location /ws/` de `nginx.conf` (en-têtes Upgrade),
       ainsi que `client_max_body_size 15m` (photos de la messagerie) et l'en-tête
