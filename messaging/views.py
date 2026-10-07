@@ -121,6 +121,8 @@ def _message(msg, user, other_read_at, request=None):
         'from_me':     msg.sender_id == user.id,
         'created_at':  msg.created_at.isoformat(),
         'read':        bool(other_read_at and msg.sender_id == user.id and other_read_at >= msg.created_at),
+        # Réponse automatique de l'assistant (au nom de l'organisateur)
+        'assistant':   bool(msg.meta.get('assistant')) if isinstance(msg.meta, dict) else False,
     }
     if msg.kind == 'image' and msg.attachment:
         # Lien signé valable 24 h : l'image d'une conversation n'est jamais publique

@@ -138,6 +138,12 @@ def clean_style(data, event_type):
             errors['theme'] = 'Le thème contient des caractères non autorisés.'
         out['theme'] = theme
 
+    if 'assistant_enabled' in data:
+        if not isinstance(data.get('assistant_enabled'), bool):
+            errors['assistant_enabled'] = 'Valeur invalide.'
+        else:
+            out['assistant_enabled'] = data['assistant_enabled']
+
     if 'palette' in data and data.get('palette') is not None:
         palette = data.get('palette')
         if not isinstance(palette, dict):

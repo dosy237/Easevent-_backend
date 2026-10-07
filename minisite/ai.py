@@ -27,7 +27,7 @@ from . import catalog
 logger = logging.getLogger(__name__)
 
 # Rôles où la rapidité prime (le modèle de secours rapide passe en premier)
-FAST_FIRST = {'review'}
+FAST_FIRST = {'review', 'assistant'}     # modèle rapide d'abord (quota gratuit plus large)
 
 # Ne reçoivent jamais de données saisies par l'utilisateur (titres, descriptions…)
 SENSITIVE_FORBIDDEN = {'mistral'}

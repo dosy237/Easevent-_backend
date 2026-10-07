@@ -363,7 +363,7 @@ MINISITE_ASYNC = config('MINISITE_ASYNC', default=True, cast=bool)    # False : 
 MINISITE_AI_TIMEOUT = config('MINISITE_AI_TIMEOUT', default=40, cast=int)
 # Délai par rôle (secondes) : la rédaction et la critique travaillent sur les 6 propositions à la fois
 MINISITE_REVIEW = config('MINISITE_REVIEW', default=False, cast=bool)    # relecture en plus du directeur de création
-MINISITE_AI_TIMEOUTS = {'direction': 40, 'copy': 70, 'review': 40, 'critic': 70}
+MINISITE_AI_TIMEOUTS = {'direction': 40, 'copy': 70, 'review': 40, 'critic': 70, 'assistant': 20}
 # Clés gratuites : Google AI Studio, Groq, OpenRouter, Mistral (facultatives)
 # Modèles : plusieurs possibles, séparés par des virgules (qualité d'abord, puis secours rapide)
 GEMINI_API_KEY     = config('GEMINI_API_KEY', default='')
@@ -382,6 +382,7 @@ MINISITE_ROLES = {
     'copy':      ('gemini', 'groq', 'openrouter'),
     'review':    ('groq', 'openrouter', 'gemini'),
     'critic':    ('groq', 'openrouter', 'gemini'),     # directeur de création : un autre modèle que le rédacteur si possible
+    'assistant': ('groq', 'openrouter', 'gemini'),     # réponses aux questions des participants (messagerie)
 }
 # Journal d'apprentissage (futur modèle Easevent) : une ligne JSON par génération / choix / retouche
 MINISITE_DATASET_ENABLED = config('MINISITE_DATASET_ENABLED', default=True, cast=bool)

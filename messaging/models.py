@@ -118,3 +118,30 @@ def _delete_attachment(sender, instance, **kwargs):
             (Path(settings.PRIVATE_MEDIA_ROOT) / instance.attachment).unlink(missing_ok=True)
         except OSError:
             pass
+
+
+class EventQuestion(models.Model):
+    """
+    Question d'un participant à l'organisateur, vue par l'assistant :
+      auto     — répondue automatiquement à partir des informations de l'événement ;
+      pending  — transmise à l'organisateur (notifié) ;
+      answered — l'organisateur a répondu : sa réponse enrichit les suivantes.
+    """
+    class Status(models.TextChoices):
+        AUTO = 'auto', 'Réponse automatique'
+        PENDING = 'pending', "En attente de l'organisateur"
+        ANSWERED = 'answered', "Répondue par l'organisateur"
+
+    event = models.ForeignKey('events.Event', on_delete=models.CASCADE, related_name='questions')
+    conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE, related_name='questions')
+    message = models.OneToOneField(Message, on_delete=models.CASCADE, related_name='question')
+    question = models.CharField(max_length=500)
+    answer = models.TextField(max_length=2000, blank=True, default='')
+    status = models.CharField(max_length=10, choices=Status.choices)
+    source = models.CharField(max_length=20, blank=True, default='')       # ia / règles / cache / organisateur
+    created_at = models.DateTimeField(auto_now_add=True)
+    answered_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [models.Index(fields=['event', 'status'])]

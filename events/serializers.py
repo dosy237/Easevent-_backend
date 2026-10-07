@@ -76,6 +76,7 @@ class EventPublicSerializer(serializers.ModelSerializer):
             'ambiance',
             'ambiance_label',      # ambiance libre quand ambiance = « autre »
             'theme',               # thème de l'événement (fil conducteur du mini-site)
+            'assistant_enabled',   # réponses automatiques aux questions des participants
             'timezone',            # fuseau du lieu (l'application affiche aussi l'heure locale du visiteur)
             'palette',             # couleurs choisies librement {primary, secondary}
             'subdomain',

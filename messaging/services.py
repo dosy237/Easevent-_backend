@@ -198,6 +198,15 @@ def send(conv, sender, body):
     msg = Message.objects.create(conversation=conv, sender=sender, body=body, created_at=now)
     _after_send(conv, sender, body, now)
     _broadcast(conv, msg)
+    if conv.event_id:
+        from .assistant import organizer_replied
+        if sender.id == conv.organizer_id:
+            organizer_replied(conv, body)
+        elif conv.event.assistant_enabled:
+            # Réponse automatique éventuelle, en arrière-plan
+            from easevent.dispatch import dispatch
+            from .tasks import answer_question
+            dispatch(answer_question, str(msg.id))
     return msg
 
 

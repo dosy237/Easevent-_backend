@@ -153,6 +153,8 @@ class Event(models.Model):
     # Fil conducteur du mini-site : le SUJET d'une conférence (« L'impact de l'IA sur nos capacités
     # cognitives »), l'UNIVERS d'une célébration (« Amour et bohème »)
     theme = models.CharField(max_length=160, blank=True, default='', verbose_name="Thème")
+    # Réponses automatiques aux questions des participants (messagerie), désactivables par l'organisateur
+    assistant_enabled = models.BooleanField(default=True, verbose_name="Réponses automatiques")
 
     # ── Sous-domaine et domaine personnalisé ─────────────────
     subdomain = models.CharField(
