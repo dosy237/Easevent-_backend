@@ -50,7 +50,7 @@ class EventQuotaTest(TestCase):
         self.assertEqual(overview['event_quota']['remaining'], 1)
         free = next(p for p in overview['plans'] if p['id'] == 'free')
         self.assertEqual(free['event_limit'], 1)
-        self.assertIn('1 événement par mois', free['features'])
+        self.assertIn('1 événement à organiser par mois', free['features'])
 
     def test_plans_payants_illimites(self):
         for plan in ('standard', 'pro'):

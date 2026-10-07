@@ -32,7 +32,8 @@ INTERVALS = {'monthly': 'month', 'annual': 'year'}
 PLANS = {
     'free': {
         'name': 'Gratuit', 'monthly': 0, 'annual': 0,
-        'features': ['1 événement par mois', "Jusqu'à 50 invités par événement", 'Invitations par email, SMS et contacts',
+        'features': ['Participer à tous les événements publics, sans limite', '1 événement à organiser par mois',
+                     "Jusqu'à 50 invités par événement", 'Invitations par email, SMS et contacts',
                      'Billetterie et paiements en ligne', 'Messagerie avec vos invités', 'Questions RSVP'],
     },
     'standard': {
