@@ -57,6 +57,15 @@ SECTIONS = {
     'calendar':  {'variants': ('button', 'card'), 'copy': {'label': 40}},
     'footer':    {'variants': ('simple', 'signature', 'centered'), 'copy': {'text': 140}},
 }
+# ── Bannière d'accueil (photo plein cadre) : filtre et teinte ────────────────
+# veil : dégradé sombre vers le texte ; glass : texte sur un panneau de verre dépoli ;
+# tint : la photo prend une couleur (celle du thème, ou une teinte choisie).
+HERO_FILTERS = ('veil', 'glass', 'tint')
+HERO_TINTS = ('primary', 'blue', 'rose', 'gold', 'sage', 'night')
+PHOTO_HEROES = ('fullbleed',)                      # accueils où la photo occupe tout le cadre
+# Célébrations : la photo du couple / de la personne fêtée mérite le plein cadre
+BANNER_TINTS_BY_TYPE = {'mariage': ('rose', 'gold', 'blue', 'primary'), 'anniversaire': ('rose', 'gold', 'primary'),
+                        'gala': ('gold', 'night', 'primary'), 'soiree': ('night', 'blue', 'primary')}
 FAQ_MAX = 5
 FAQ_Q_MAX, FAQ_A_MAX = 90, 260
 

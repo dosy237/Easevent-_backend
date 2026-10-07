@@ -185,6 +185,13 @@ def compose(f, direction, rng, art=None, ai_copy=None, used_heroes=(), used_font
     return spec
 
 
+def _banner(spec, f, rng):
+    """Filtre et teinte de la bannière (tirage à part : la suite des dispositions reste inchangée)."""
+    hero = spec['sections'][0]
+    hero['filter'] = rng.choice(catalog.HERO_FILTERS)
+    hero['tint'] = rng.choice(catalog.BANNER_TINTS_BY_TYPE.get(f.get('type'), ('primary',) + catalog.HERO_TINTS))
+
+
 def compose_batch(f, seed, art=None, copies=None, taken=frozenset()):
     """6 propositions aux dispositions toutes différentes (et jamais vues auparavant)."""
     rng = random.Random(seed)
@@ -199,6 +206,7 @@ def compose_batch(f, seed, art=None, copies=None, taken=frozenset()):
             fp = fingerprint(spec)
             tries += 1
         spec['fingerprint'] = fp
+        _banner(spec, f, random.Random(f'{seed}:{direction}:banner'))
         prints.add(fp)
         heroes.add(spec['sections'][0]['variant'])
         fonts.add(spec['theme']['fonts'])

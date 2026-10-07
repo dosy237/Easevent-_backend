@@ -225,6 +225,28 @@ class MiniSiteTest(TestCase):
         self.assertEqual(r.data['spec']['copy']['hero']['kicker'], 'Le plus beau jour')
         self.assertEqual(client_for(self.stranger).patch(url, {'fonts': 'lora-inter'}, format='json').status_code, 404)
 
+    def test_banniere(self):
+        chosen = self.choose_first()['spec']
+        hero = chosen['sections'][0]
+        self.assertIn(hero['filter'], catalog.HERO_FILTERS)
+        self.assertIn(hero['tint'], catalog.BANNER_TINTS_BY_TYPE['mariage'])        # teintes de célébration
+        url = f'/api/events/{self.event.id}/minisite/'
+        own = f'https://res.cloudinary.com/demo/image/upload/v1/easevent/events/{self.orga.id}/banner_ab12.jpg'
+        with mock.patch('cloudinary.config', return_value=mock.Mock(cloud_name='demo')):
+            r = self.c.patch(url, {'banner': {'image': own, 'filter': 'glass', 'tint': 'blue', 'variant': 'fullbleed'}}, format='json')
+            self.assertEqual(r.status_code, 200, r.data)
+            h = r.data['spec']['sections'][0]
+            self.assertEqual((h['image'], h['filter'], h['tint'], h['variant']), (own, 'glass', 'blue', 'fullbleed'))
+            # Photo d'un autre compte, adresse extérieure, valeurs inconnues : refusées
+            other = own.replace(str(self.orga.id), str(self.stranger.id))
+            for bad in ({'image': other}, {'image': 'https://evil.example/x.jpg'}, {'filter': 'sepia'}, {'tint': 'vert'},
+                        {'variant': 'nope'}, {}, 'x'):
+                self.assertEqual(self.c.patch(url, {'banner': bad}, format='json').status_code, 400, bad)
+            r = self.c.patch(url, {'banner': {'image': None}}, format='json')
+            self.assertNotIn('image', r.data['spec']['sections'][0])
+        with mock.patch('cloudinary.config', return_value=mock.Mock(cloud_name='')):
+            self.assertEqual(self.c.patch(url, {'banner': {'image': own}}, format='json').status_code, 400)
+
     def test_journal_d_apprentissage(self):
         self.choose_first()
         lines = []

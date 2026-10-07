@@ -189,6 +189,45 @@ def _user_text(value, limit):
     return text
 
 
+def _own_upload(event, url):
+    """Une photo envoyée par l'organisateur sur notre Cloudinary (jamais une adresse extérieure)."""
+    import cloudinary
+    cloud = cloudinary.config().cloud_name or ''
+    prefix = f'https://res.cloudinary.com/{cloud}/image/upload/'
+    return bool(cloud) and url.startswith(prefix) and f'/easevent/events/{event.organizer_id}/' in url \
+        and len(url) <= 500 and not any(ch in url for ch in ' "\'<>')
+
+
+def _banner_edit(event, hero, banner):
+    if not isinstance(banner, dict):
+        raise MiniSiteError('Bannière invalide.')
+    done = {}
+    if 'image' in banner:
+        url = banner['image']
+        if url in (None, ''):
+            hero.pop('image', None)
+        elif not isinstance(url, str) or not _own_upload(event, url):
+            raise MiniSiteError('Photo invalide : choisissez-la depuis votre téléphone.')
+        else:
+            hero['image'] = url
+        done['image'] = bool(url)
+    if 'filter' in banner:
+        if banner['filter'] not in catalog.HERO_FILTERS:
+            raise MiniSiteError('Filtre indisponible.')
+        hero['filter'] = done['filter'] = banner['filter']
+    if 'tint' in banner:
+        if banner['tint'] not in catalog.HERO_TINTS:
+            raise MiniSiteError('Teinte indisponible.')
+        hero['tint'] = done['tint'] = banner['tint']
+    if 'variant' in banner:
+        if banner['variant'] not in catalog.SECTIONS['hero']['variants']:
+            raise MiniSiteError("Mise en page d'accueil indisponible.")
+        hero['variant'] = done['variant'] = banner['variant']
+    if not done:
+        raise MiniSiteError('Bannière invalide.')
+    return done
+
+
 def edit(event, data):
     cfg = event.minisite_config or {}
     if not cfg.get('spec'):
@@ -244,6 +283,10 @@ def edit(event, data):
                     raise MiniSiteError('Champ inconnu.')
                 spec['copy'][kind][field] = _user_text(value, limit)
         changes['copy'] = texts
+
+    banner = data.get('banner')
+    if banner is not None:
+        changes['banner'] = _banner_edit(event, spec['sections'][0], banner)
 
     if not changes:
         return cfg
