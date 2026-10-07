@@ -44,7 +44,8 @@ class ProviderError(Exception):
 
 
 def _key(provider):
-    return getattr(settings, f'{provider.upper()}_API_KEY', '') or ''
+    from adminpanel.keys import get_key
+    return get_key(f'{provider.upper()}_API_KEY')
 
 
 def _models(provider):

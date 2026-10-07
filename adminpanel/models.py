@@ -64,3 +64,53 @@ class AdminAction(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+
+
+class ServiceKey(models.Model):
+    """
+    Clé d'un service externe (IA, paiement, cartes…), saisie dans l'administration Django et
+    stockée CHIFFRÉE (Fernet : AES-128 + HMAC). Elle remplace la variable d'environnement de
+    même nom dès son enregistrement, sans redémarrer le serveur (voir adminpanel/keys.py).
+    """
+    class Name(models.TextChoices):
+        GEMINI_API_KEY = 'GEMINI_API_KEY', 'Google Gemini (IA)'
+        GROQ_API_KEY = 'GROQ_API_KEY', 'Groq (IA)'
+        OPENROUTER_API_KEY = 'OPENROUTER_API_KEY', 'OpenRouter (IA)'
+        MISTRAL_API_KEY = 'MISTRAL_API_KEY', 'Mistral (IA, direction artistique)'
+        STRIPE_SECRET_KEY = 'STRIPE_SECRET_KEY', 'Stripe — clé secrète'
+        STRIPE_WEBHOOK_SECRET = 'STRIPE_WEBHOOK_SECRET', 'Stripe — secret du webhook (whsec_…)'
+        NOTCHPAY_PUBLIC_KEY = 'NOTCHPAY_PUBLIC_KEY', 'Notch Pay — clé publique (Mobile Money)'
+        NOTCHPAY_HASH_KEY = 'NOTCHPAY_HASH_KEY', 'Notch Pay — clé de hachage des webhooks'
+        GOOGLE_MAPS_API_KEY = 'GOOGLE_MAPS_API_KEY', 'Google Maps (recherche d’adresses, cartes)'
+        TWILIO_ACCOUNT_SID = 'TWILIO_ACCOUNT_SID', 'Twilio — Account SID (SMS)'
+        TWILIO_AUTH_TOKEN = 'TWILIO_AUTH_TOKEN', 'Twilio — Auth Token (SMS)'
+        TWILIO_MESSAGING_SERVICE_SID = 'TWILIO_MESSAGING_SERVICE_SID', 'Twilio — Messaging Service SID'
+        TWILIO_FROM_NUMBER = 'TWILIO_FROM_NUMBER', 'Twilio — numéro d’envoi'
+        SENDGRID_API_KEY = 'SENDGRID_API_KEY', 'SendGrid (emails)'
+        CLOUDINARY_CLOUD_NAME = 'CLOUDINARY_CLOUD_NAME', 'Cloudinary — nom du cloud (photos, vidéos)'
+        CLOUDINARY_API_KEY = 'CLOUDINARY_API_KEY', 'Cloudinary — API Key'
+        CLOUDINARY_API_SECRET = 'CLOUDINARY_API_SECRET', 'Cloudinary — API Secret'
+        EXPO_ACCESS_TOKEN = 'EXPO_ACCESS_TOKEN', 'Expo — jeton des notifications push'
+
+    name = models.CharField(max_length=40, choices=Name.choices, unique=True, verbose_name='Service')
+    encrypted_value = models.TextField(verbose_name='Valeur chiffrée')
+    last4 = models.CharField(max_length=4, blank=True, verbose_name='4 derniers caractères')
+    updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name='+')
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Clé de service'
+        verbose_name_plural = 'Clés de service (chiffrées)'
+        ordering = ['name']
+
+    def __str__(self):
+        return self.get_name_display()
+
+
+def _forget_key(sender, instance, **kwargs):
+    from .keys import forget
+    forget(instance.name)
+
+
+models.signals.post_save.connect(_forget_key, sender=ServiceKey)
+models.signals.post_delete.connect(_forget_key, sender=ServiceKey)

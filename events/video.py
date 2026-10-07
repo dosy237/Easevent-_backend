@@ -52,7 +52,8 @@ def folder_for(user):
 @throttle_classes([VideoThrottle])
 def signature(request):
     """Paramètres signés pour un envoi direct à Cloudinary (valables une heure)."""
-    cfg = cloudinary.config()
+    from adminpanel.keys import apply_cloudinary
+    cfg = apply_cloudinary()
     if not cfg.api_secret or cfg.api_secret == 'dummy':
         return Response({'detail': 'L’envoi de vidéos n’est pas encore configuré.', 'code': 'video_unavailable'},
                         status=status.HTTP_503_SERVICE_UNAVAILABLE)
@@ -94,6 +95,8 @@ def attach(event, user, data):
     # Seules les vidéos envoyées par l'organisateur dans SON dossier sont acceptées
     if not public_id.startswith(folder_for(user) + '/') or len(public_id) > 200:
         raise VideoError('Vidéo introuvable : renvoyez-la depuis l’application.', 'not_found')
+    from adminpanel.keys import apply_cloudinary
+    apply_cloudinary()
     try:
         info = cloudinary.api.resource(public_id, resource_type='video')
     except Exception:
@@ -115,7 +118,9 @@ def attach(event, user, data):
 
 
 def _destroy(public_id):
+    from adminpanel.keys import apply_cloudinary
     try:
+        apply_cloudinary()
         cloudinary.uploader.destroy(public_id, resource_type='video', invalidate=True)
     except Exception:
         pass

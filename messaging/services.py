@@ -55,10 +55,28 @@ def may_write(conv, user):
     """Peut encore écrire dans cette conversation (amitié retirée, accès à l'événement perdu…)."""
     if conv.is_direct:
         other = conv.participant if user.id == conv.organizer_id else conv.organizer
-        return other.is_active and are_friends(user, other)
+        return other.is_active and (are_friends(user, other) or linked_by_gift(user, other))
     if user.id == conv.organizer_id:
         return True
     return may_converse(conv.event, user)
+
+
+def linked_by_gift(a, b):
+    """Un billet offert entre deux personnes leur ouvre la conversation (remerciements, détails)."""
+    from tickets.models import TicketGift
+    return TicketGift.objects.filter(Q(buyer=a, recipient=b) | Q(buyer=b, recipient=a), status='delivered').exists()
+
+
+def get_or_create_pair(a, b):
+    """Conversation directe entre deux personnes, sans condition (usage interne : billet offert)."""
+    a, b = sorted((a, b), key=lambda u: str(u.id))
+    try:
+        with transaction.atomic():
+            conv, _ = Conversation.objects.get_or_create(
+                event=None, organizer=a, participant=b, defaults={'last_message_at': timezone.now()})
+    except IntegrityError:
+        conv = Conversation.objects.get(event__isnull=True, organizer=a, participant=b)
+    return conv
 
 
 def get_or_create_direct(user, friend):

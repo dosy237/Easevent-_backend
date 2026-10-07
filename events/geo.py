@@ -23,6 +23,8 @@ from urllib.parse import quote
 
 import requests
 from django.conf import settings
+
+from adminpanel.keys import get_key
 from django.core.cache import cache
 
 logger = logging.getLogger(__name__)
@@ -35,7 +37,7 @@ GREEN = (27, 107, 74)
 
 
 def provider():
-    return 'google' if settings.GOOGLE_MAPS_API_KEY else 'osm'
+    return 'google' if get_key('GOOGLE_MAPS_API_KEY') else 'osm'
 
 
 # ─────────────────────────────────────────────────────────────
@@ -99,7 +101,7 @@ def _google_search(q, lat, lng, session):
     if lat is not None and lng is not None:
         body['locationBias'] = {'circle': {'center': {'latitude': lat, 'longitude': lng}, 'radius': 50000.0}}
     resp = requests.post('https://places.googleapis.com/v1/places:autocomplete', json=body, timeout=TIMEOUT,
-                         headers={'X-Goog-Api-Key': settings.GOOGLE_MAPS_API_KEY})
+                         headers={'X-Goog-Api-Key': get_key('GOOGLE_MAPS_API_KEY')})
     resp.raise_for_status()
     out = []
     for s in resp.json().get('suggestions', []):
@@ -122,7 +124,7 @@ def place_details(place_id, session=''):
         return None
     resp = requests.get(f'https://places.googleapis.com/v1/places/{pid}', timeout=TIMEOUT,
                         params={'sessionToken': session[:64]} if session else None,
-                        headers={'X-Goog-Api-Key': settings.GOOGLE_MAPS_API_KEY,
+                        headers={'X-Goog-Api-Key': get_key('GOOGLE_MAPS_API_KEY'),
                                  'X-Goog-FieldMask': 'location,formattedAddress,displayName'})
     resp.raise_for_status()
     d = resp.json()
@@ -154,7 +156,7 @@ def static_map_png(lat, lng):
         try:
             resp = requests.get('https://maps.googleapis.com/maps/api/staticmap', timeout=TIMEOUT, params={
                 'center': f'{lat},{lng}', 'zoom': ZOOM, 'size': f'{MAP_W}x{MAP_H}', 'scale': 2,
-                'markers': f'color:0x1B6B4A|{lat},{lng}', 'key': settings.GOOGLE_MAPS_API_KEY,
+                'markers': f'color:0x1B6B4A|{lat},{lng}', 'key': get_key('GOOGLE_MAPS_API_KEY'),
             })
             resp.raise_for_status()
             return resp.content          # non conservé sur disque (conditions Google)

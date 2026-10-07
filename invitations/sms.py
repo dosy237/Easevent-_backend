@@ -17,6 +17,8 @@ import logging
 import requests
 from django.conf import settings
 
+from adminpanel.keys import get_key
+
 logger = logging.getLogger(__name__)
 
 API_URL = 'https://api.twilio.com/2010-04-01/Accounts/{sid}/Messages.json'
@@ -25,8 +27,8 @@ TIMEOUT = 8
 
 def is_configured():
     return bool(
-        settings.TWILIO_ACCOUNT_SID and settings.TWILIO_AUTH_TOKEN
-        and (settings.TWILIO_FROM_NUMBER or settings.TWILIO_MESSAGING_SERVICE_SID)
+        get_key('TWILIO_ACCOUNT_SID') and get_key('TWILIO_AUTH_TOKEN')
+        and (get_key('TWILIO_FROM_NUMBER') or get_key('TWILIO_MESSAGING_SERVICE_SID'))
     )
 
 
@@ -35,15 +37,15 @@ def send_sms(to, body):
     if not is_configured():
         return 'not_configured'
     data = {'To': to, 'Body': body}
-    if settings.TWILIO_MESSAGING_SERVICE_SID:
-        data['MessagingServiceSid'] = settings.TWILIO_MESSAGING_SERVICE_SID
+    if get_key('TWILIO_MESSAGING_SERVICE_SID'):
+        data['MessagingServiceSid'] = get_key('TWILIO_MESSAGING_SERVICE_SID')
     else:
-        data['From'] = settings.TWILIO_FROM_NUMBER
+        data['From'] = get_key('TWILIO_FROM_NUMBER')
     try:
         resp = requests.post(
-            API_URL.format(sid=settings.TWILIO_ACCOUNT_SID),
+            API_URL.format(sid=get_key('TWILIO_ACCOUNT_SID')),
             data=data,
-            auth=(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN),
+            auth=(get_key('TWILIO_ACCOUNT_SID'), get_key('TWILIO_AUTH_TOKEN')),
             timeout=TIMEOUT,
         )
     except requests.RequestException as exc:

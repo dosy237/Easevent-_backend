@@ -18,6 +18,8 @@ from datetime import datetime, timezone as dt_timezone
 
 import stripe
 from django.conf import settings
+
+from adminpanel.keys import get_key
 from django.db import transaction
 from django.utils import timezone
 
@@ -56,9 +58,9 @@ class SubscriptionError(Exception):
 
 
 def _configure():
-    if not settings.STRIPE_SECRET_KEY:
+    if not get_key('STRIPE_SECRET_KEY'):
         raise SubscriptionError('Les paiements ne sont pas encore configurés sur le serveur.', 'payments_unavailable', 503)
-    stripe.api_key = settings.STRIPE_SECRET_KEY
+    stripe.api_key = get_key('STRIPE_SECRET_KEY')
     stripe.max_network_retries = 2
 
 
@@ -85,7 +87,7 @@ def state(user):
         'current_period_end': active.current_period_end.isoformat() if active and active.current_period_end else None,
         'cancel_at': active.cancel_at.isoformat() if active and active.cancel_at else None,
         'can_manage': bool(user.stripe_customer_id),
-        'payments_available': bool(settings.STRIPE_SECRET_KEY),
+        'payments_available': bool(get_key('STRIPE_SECRET_KEY')),
     }
 
 
@@ -208,7 +210,7 @@ def portal(user):
 
 def cancel_now_for_deleted_account(user):
     sub = current(user)
-    if not sub or sub.status not in ('active', 'past_due') or not settings.STRIPE_SECRET_KEY:
+    if not sub or sub.status not in ('active', 'past_due') or not get_key('STRIPE_SECRET_KEY'):
         return
     _configure()
     stripe.Subscription.cancel(sub.stripe_sub_id)

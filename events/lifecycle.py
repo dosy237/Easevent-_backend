@@ -63,6 +63,13 @@ def cancel_event(event, *, reason='event_cancelled', notify_guests=True):
         event.status = 'archived'
         event.save(update_fields=['deleted_at', 'status', 'updated_at'])
 
+    # Billets offerts payés mais pas encore remis (proche non inscrit) : l'acheteur est remboursé
+    from tickets.gifts import refund as refund_gift
+    from tickets.models import TicketGift
+    for gift in TicketGift.objects.select_related('event', 'buyer').filter(event=event, status=TicketGift.Status.PAID):
+        refunds_failed += 0 if refund_gift(gift, reason) else 1
+    TicketGift.objects.filter(event=event, status=TicketGift.Status.AWAITING_PAYMENT).update(status=TicketGift.Status.CANCELLED)
+
     from .tz import local
     when = local(event.start_date, event)
     for user in guests:

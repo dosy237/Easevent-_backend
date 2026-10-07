@@ -185,7 +185,8 @@ REST_FRAMEWORK = {
         'billing':         '30/hour',      # abonnements : sessions Stripe
         'checkin':         '120/min',      # scanner de tickets à l'entrée
         'minisite':        '20/hour',
-        'admin':           '600/min',      # tableau de bord de l'équipe
+        'admin':           '600/min',
+        'gifts':           '60/hour',      # billets offerts (création, consultation)      # tableau de bord de l'équipe
         'likes':           '120/min',      # « J'aime » (aimer / retirer)
         'share':           '30/hour',
         'video':           '20/hour',      # signatures d'envoi de vidéo (Cloudinary)      # partages d'événements à des amis      # générations de mini-site (appels aux modèles d'IA)
@@ -310,17 +311,17 @@ USE_TZ = True
 # ─────────────────────────────────────────────────────────────
 # EMAIL + CLOUDINARY
 # ─────────────────────────────────────────────────────────────
-EMAIL_BACKEND = config('EMAIL_BACKEND', default='sendgrid_backend.SendgridBackend')
-SENDGRID_API_KEY = config('SENDGRID_API_KEY')
+EMAIL_BACKEND = config('EMAIL_BACKEND', default='easevent.mail.DynamicSendgridBackend')
+# Les clés ci-dessous peuvent aussi être saisies, chiffrées, dans l'administration Django
+# (Clés de service) : elles remplacent alors l'environnement sans redémarrage.
+SENDGRID_API_KEY = config('SENDGRID_API_KEY', default='')
 DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='dosyca35@gmail.com')
 SENDGRID_SANDBOX_MODE_IN_DEBUG = False
 
-cloudinary.config(
-    cloud_name=config('CLOUDINARY_CLOUD_NAME'),
-    api_key=config('CLOUDINARY_API_KEY'),
-    api_secret=config('CLOUDINARY_API_SECRET'),
-    secure=True,
-)
+CLOUDINARY_CLOUD_NAME = config('CLOUDINARY_CLOUD_NAME', default='')
+CLOUDINARY_API_KEY = config('CLOUDINARY_API_KEY', default='')
+CLOUDINARY_API_SECRET = config('CLOUDINARY_API_SECRET', default='')
+cloudinary.config(cloud_name=CLOUDINARY_CLOUD_NAME, api_key=CLOUDINARY_API_KEY, api_secret=CLOUDINARY_API_SECRET, secure=True)
 
 # ─────────────────────────────────────────────────────────────
 # SWAGGER / SPECTACULAR
@@ -409,6 +410,8 @@ INVITE_WAVE_SECONDS = 15     # écart entre deux vagues
 # sont créées mais marquées « canal non configuré ».
 # Clé de chiffrement des numéros (par défaut dérivée de SECRET_KEY)
 PHONE_ENCRYPTION_KEY = config('PHONE_ENCRYPTION_KEY', default='')
+# Chiffrement des clés de service saisies dans l'administration (sinon dérivé de SECRET_KEY)
+KEYS_ENCRYPTION_KEY = config('KEYS_ENCRYPTION_KEY', default='')
 
 TWILIO_ACCOUNT_SID          = config('TWILIO_ACCOUNT_SID', default='')
 TWILIO_AUTH_TOKEN           = config('TWILIO_AUTH_TOKEN', default='')

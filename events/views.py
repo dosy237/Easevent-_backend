@@ -219,6 +219,8 @@ def upload_image(request):
 
     folder = 'avatars' if image_name == 'avatar' else 'events'
     try:
+        from adminpanel.keys import apply_cloudinary
+        apply_cloudinary()
         result = cloudinary.uploader.upload(
             image_data,
             folder         = f'easevent/{folder}/{request.user.id}',

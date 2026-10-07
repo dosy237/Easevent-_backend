@@ -36,6 +36,7 @@ from .models import Ticket
 from .serializers import TicketSerializer
 from . import services, stripe_service
 from .services import TicketError
+from adminpanel.keys import get_key
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +47,7 @@ def _error(exc):
 
 def _own_ticket(request, ticket_id):
     # Un utilisateur ne voit que SES tickets (OWASP API1 — BOLA)
-    return get_object_or_404(Ticket.objects.select_related('event', 'event__organizer', 'user'),
+    return get_object_or_404(Ticket.objects.select_related('event', 'event__organizer', 'user', 'purchased_by', 'gift'),
                              pk=ticket_id, user=request.user)
 
 
@@ -66,7 +67,7 @@ def my_tickets(request):
         qs = qs.filter(status=Ticket.Status.GENERATED)
     elif wanted == 'archived':
         qs = qs.filter(status__in=[Ticket.Status.CANCELLED, Ticket.Status.EXPIRED])
-    qs = qs.select_related('event', 'event__organizer', 'user').order_by('-created_at')[:100]
+    qs = qs.select_related('event', 'event__organizer', 'user', 'purchased_by', 'gift').order_by('-created_at')[:100]
     return Response({'tickets': TicketSerializer(qs, many=True, context={'request': request}).data})
 
 
@@ -157,7 +158,7 @@ def _connect_payload(user):
         'connected':        bool(user.stripe_account_id),
         'charges_enabled':  user.stripe_charges_enabled,
         'payouts_enabled':  user.stripe_payouts_enabled,
-        'payments_available': bool(stripe_service.settings.STRIPE_SECRET_KEY),
+        'payments_available': bool(get_key('STRIPE_SECRET_KEY')),
     }
 
 
@@ -233,7 +234,7 @@ def stripe_webhook(request):
 @permission_classes([IsAuthenticated])
 def payment_methods(request):
     from . import mobile_money
-    return Response({'card': bool(stripe_service.settings.STRIPE_SECRET_KEY), 'mobile_money': mobile_money.available()})
+    return Response({'card': bool(get_key('STRIPE_SECRET_KEY')), 'mobile_money': mobile_money.available()})
 
 
 class MobileMoneyThrottle(UserRateThrottle):
@@ -276,6 +277,13 @@ def mobile_money_return(request):
         ticket = mobile_money.sync(str(request.GET.get('reference', ''))[:64])
     except Exception:
         pass
+    from .models import TicketGift
+    if isinstance(ticket, TicketGift):
+        done = ticket.status in (TicketGift.Status.DELIVERED, TicketGift.Status.PAID)
+        title = 'Cadeau réglé' if done else ('Paiement non abouti' if ticket.payment_status == 'failed' else 'Paiement en cours')
+        message = ('Merci ! Retournez dans Easevent : votre proche est prévenu.' if done else
+                   'Validez le paiement sur votre téléphone, puis retournez dans Easevent.')
+        return render(request, 'tickets/return.html', {'title': title, 'message': message, 'deeplink': 'easevent://invitations'})
     if ticket is not None and ticket.status == Ticket.Status.GENERATED:
         title, message = 'Paiement reçu', 'Votre billet est prêt dans « Mes invitations ».'
     elif ticket is not None and ticket.payment_status == Ticket.PaymentStatus.FAILED:
@@ -285,12 +293,88 @@ def mobile_money_return(request):
     return render(request, 'tickets/return.html', {'title': title, 'message': message, 'deeplink': 'easevent://invitations'})
 
 
+# ─────────────────────────────────────────────────────────────
+# Billets offerts (« Payer pour un proche »)
+# ─────────────────────────────────────────────────────────────
+class GiftThrottle(UserRateThrottle):
+    scope = 'gifts'
+
+
+def _own_gift(request, gift_id):
+    from .models import TicketGift
+    return get_object_or_404(TicketGift.objects.select_related('event', 'event__organizer', 'buyer', 'recipient'),
+                             pk=gift_id, buyer=request.user)
+
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([GiftThrottle])
+def event_gifts(request, event_id):
+    from . import gifts
+    if request.method == 'GET':                      # mes cadeaux pour cet événement
+        from .models import TicketGift
+        rows = TicketGift.objects.select_related('event', 'recipient').filter(event_id=event_id, buyer=request.user)
+        return Response({'results': [gifts.payload(g) for g in rows[:50]]})
+    event = get_object_or_404(Event.objects.select_related('organizer'), pk=event_id, deleted_at__isnull=True)
+    try:
+        gift = gifts.create_gift(request.user, event, request.data if isinstance(request.data, dict) else {})
+    except TicketError as exc:
+        return _error(exc)
+    return Response(gifts.payload(gift), status=status.HTTP_201_CREATED)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def gift_detail(request, gift_id):
+    from . import gifts
+    return Response(gifts.payload(_own_gift(request, gift_id)))
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([MobileMoneyThrottle])
+def gift_checkout(request, gift_id):
+    gift = _own_gift(request, gift_id)
+    try:
+        return Response({'checkout_url': stripe_service.create_gift_checkout(gift, request)})
+    except TicketError as exc:
+        return _error(exc)
+    except Exception:
+        logger.exception('Session Stripe (cadeau) impossible')
+        return Response({'detail': 'Le paiement est momentanément indisponible. Réessayez.', 'code': 'stripe_error'},
+                        status=status.HTTP_502_BAD_GATEWAY)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([MobileMoneyThrottle])
+def gift_mobile_money(request, gift_id):
+    from . import mobile_money
+    data = request.data if isinstance(request.data, dict) else {}
+    try:
+        return Response(mobile_money.create_gift_payment(_own_gift(request, gift_id), request, data.get('phone', '')))
+    except TicketError as exc:
+        return _error(exc)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def gift_cancel(request, gift_id):
+    from . import gifts
+    try:
+        return Response(gifts.payload(gifts.cancel(_own_gift(request, gift_id))))
+    except TicketError as exc:
+        return _error(exc)
+
+
 def payment_return(request):
     """Page affichée après Stripe (paiement ou activation) : renvoie vers l'application."""
     flow = request.GET.get('flow', 'ticket')
     state = request.GET.get('status', '')
     pages = {
         ('ticket', 'success'):  ('Paiement envoyé', 'Votre billet apparaît dans « Mes invitations » dès que le paiement est confirmé.', 'easevent://invitations'),
+        ('gift', 'success'):    ('Cadeau réglé', 'Merci ! Votre proche est prévenu dès la confirmation du paiement.', 'easevent://invitations'),
+        ('gift', 'cancel'):     ('Paiement interrompu', 'Aucun montant n’a été prélevé. Vous pouvez reprendre le cadeau depuis l’événement.', 'easevent://decouvrir'),
         ('ticket', 'cancel'):   ('Paiement interrompu', 'Votre billet reste dans « Mes invitations › En attente ». Vous pourrez payer plus tard.', 'easevent://invitations'),
         ('connect', 'done'):    ('Informations enregistrées', 'Retournez dans Easevent pour voir l’état de vos paiements.', 'easevent://profil/paiements'),
         ('connect', 'refresh'): ('Lien expiré', 'Relancez l’activation des paiements depuis votre profil Easevent.', 'easevent://profil/paiements'),

@@ -124,6 +124,13 @@ def claim_invitations(user, phone_hash=None, email=None):
                        .filter(match, invited_user__isnull=True, expires_at__gt=timezone.now(),
                                event__deleted_at__isnull=True)
                        .exclude(status__in=('revoked', 'expired')).exclude(event__organizer=user))
+    # Billets offerts par un proche qui attendaient cette personne
+    from tickets.gifts import claim_gifts
+    try:
+        claim_gifts(user, phone_hash=phone_hash, email=email)
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception('Billets offerts non rattachés pour %s', user.id)
     claimed = 0
     for inv in invitations:
         # Déjà invité autrement à ce même événement : on garde une seule invitation

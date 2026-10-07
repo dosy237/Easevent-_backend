@@ -196,7 +196,8 @@ def _user_text(value, limit):
 def _own_upload(event, url):
     """Une photo envoyée par l'organisateur sur notre Cloudinary (jamais une adresse extérieure)."""
     import cloudinary
-    cloud = cloudinary.config().cloud_name or ''
+    from adminpanel.keys import apply_cloudinary
+    cloud = apply_cloudinary().cloud_name or ''
     prefix = f'https://res.cloudinary.com/{cloud}/image/upload/'
     return bool(cloud) and url.startswith(prefix) and f'/easevent/events/{event.organizer_id}/' in url \
         and len(url) <= 500 and not any(ch in url for ch in ' "\'<>')

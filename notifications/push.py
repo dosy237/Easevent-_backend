@@ -100,8 +100,9 @@ def deliver(user_id, title, body, data, thread=None):
         **({'threadId': thread} if thread else {}),
     } for t in tokens]
     headers = {'Accept': 'application/json', 'Content-Type': 'application/json'}
-    if getattr(settings, 'EXPO_ACCESS_TOKEN', ''):
-        headers['Authorization'] = f'Bearer {settings.EXPO_ACCESS_TOKEN}'
+    from adminpanel.keys import get_key
+    if get_key('EXPO_ACCESS_TOKEN'):
+        headers['Authorization'] = f"Bearer {get_key('EXPO_ACCESS_TOKEN')}"
     ok = 0
     for i in range(0, len(messages), CHUNK):
         chunk = messages[i:i + CHUNK]

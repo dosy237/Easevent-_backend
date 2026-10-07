@@ -23,6 +23,8 @@ import secrets
 import requests
 from django.conf import settings
 
+from adminpanel.keys import get_key
+
 from events.wording import pass_word
 
 from .models import Ticket
@@ -40,7 +42,7 @@ class MobileMoneyUnavailable(TicketError):
 
 
 def available():
-    return bool(settings.NOTCHPAY_PUBLIC_KEY)
+    return bool(get_key('NOTCHPAY_PUBLIC_KEY'))
 
 
 def amount_xaf(price, currency):
@@ -56,7 +58,7 @@ def amount_xaf(price, currency):
 
 
 def _headers():
-    return {'Authorization': settings.NOTCHPAY_PUBLIC_KEY, 'Accept': 'application/json', 'Content-Type': 'application/json'}
+    return {'Authorization': get_key('NOTCHPAY_PUBLIC_KEY'), 'Accept': 'application/json', 'Content-Type': 'application/json'}
 
 
 def create_payment(ticket, request, phone=''):
@@ -103,10 +105,78 @@ def create_payment(ticket, request, phone=''):
     return {'url': url, 'reference': reference, 'amount': amount, 'currency': 'XAF'}
 
 
+def create_gift_payment(gift, request, phone=''):
+    """Billet offert payé par Orange Money / MTN MoMo (même circuit que pour soi)."""
+    from .gifts import _check_event
+    from .models import TicketGift
+    if not available():
+        raise MobileMoneyUnavailable()
+    if gift.status != TicketGift.Status.AWAITING_PAYMENT:
+        raise TicketError('Ce cadeau est déjà réglé ou annulé.', 'not_pending')
+    _check_event(gift.event, gift.buyer)
+    amount = amount_xaf(gift.price, gift.currency)
+    if not amount:
+        raise TicketError('Mobile Money : disponible pour les prix en euros ou en francs CFA.', 'currency_unsupported')
+    from .stripe_service import _url
+    reference = f'gf-{str(gift.id)[:8]}-{secrets.token_hex(4)}'
+    word = pass_word(gift.event)
+    body = {
+        'amount': amount, 'currency': 'XAF', 'reference': reference,
+        'description': f"{word['One']} pour {gift.recipient_name} — {gift.event.title}"[:250],
+        'callback': _url(request, f'/api/payments/mobile-money/return/?reference={reference}'),
+        'customer': {'email': gift.buyer.email, 'name': f'{gift.buyer.first_name} {gift.buyer.last_name}'.strip()},
+    }
+    phone = ''.join(ch for ch in str(phone or '') if ch.isdigit() or ch == '+')
+    if 8 <= len(phone) <= 16:
+        body['customer']['phone'] = phone
+    try:
+        r = requests.post(f'{settings.NOTCHPAY_API}/payments', json=body, headers=_headers(), timeout=TIMEOUT)
+        r.raise_for_status()
+        data = r.json()
+        url = data.get('authorization_url') or (data.get('transaction') or {}).get('authorization_url')
+        if not url or not str(url).startswith('https://'):
+            raise ValueError('authorization_url absente')
+    except Exception:
+        logger.exception('Notch Pay : création du paiement impossible (cadeau %s)', gift.id)
+        raise TicketError('Le paiement Mobile Money est momentanément indisponible. Réessayez.', 'mobile_money_error', 502)
+    gift.mobile_money_reference, gift.mobile_money_amount = reference, amount
+    gift.save(update_fields=['mobile_money_reference', 'mobile_money_amount', 'updated_at'])
+    return {'url': url, 'reference': reference, 'amount': amount, 'currency': 'XAF'}
+
+
+def _fetch(reference):
+    r = requests.get(f'{settings.NOTCHPAY_API}/payments/{reference}', headers=_headers(), timeout=TIMEOUT)
+    r.raise_for_status()
+    return r.json().get('transaction') or {}
+
+
+def _sync_gift(reference):
+    from .gifts import mark_paid
+    from .models import TicketGift
+    gift = TicketGift.objects.select_related('event', 'buyer').filter(mobile_money_reference=reference).first()
+    if gift is None:
+        logger.warning('Notch Pay : cadeau inconnu %s', reference)
+        return None
+    tx = _fetch(reference)
+    state = str(tx.get('status') or '').lower()
+    if state == 'complete':
+        paid = int(float(tx.get('amount') or 0))
+        if str(tx.get('currency') or 'XAF').upper() != 'XAF' or paid < (gift.mobile_money_amount or 0):
+            logger.error('Notch Pay : montant incohérent pour %s', reference)
+            return gift
+        return mark_paid(gift, Ticket.PaymentStatus.PAID)
+    if state == 'processing':
+        TicketGift.objects.filter(pk=gift.pk, status=TicketGift.Status.AWAITING_PAYMENT).update(payment_status=Ticket.PaymentStatus.PROCESSING)
+    elif state in FAILED:
+        TicketGift.objects.filter(pk=gift.pk, status=TicketGift.Status.AWAITING_PAYMENT).update(payment_status=Ticket.PaymentStatus.FAILED)
+    gift.refresh_from_db()
+    return gift
+
+
 def verify_signature(raw, signature):
-    if not settings.NOTCHPAY_HASH_KEY or not signature:
+    if not get_key('NOTCHPAY_HASH_KEY') or not signature:
         return False
-    expected = hmac.new(settings.NOTCHPAY_HASH_KEY.encode(), raw, hashlib.sha256).hexdigest()
+    expected = hmac.new(get_key('NOTCHPAY_HASH_KEY').encode(), raw, hashlib.sha256).hexdigest()
     return hmac.compare_digest(expected, signature.strip().lower())
 
 
@@ -120,6 +190,8 @@ def sync(reference):
     from .stripe_service import _notify_paid, _notify_payment_failed
     if not reference:
         return None
+    if reference.startswith('gf-'):
+        return _sync_gift(reference)
     ticket = Ticket.objects.select_related('event', 'user').filter(mobile_money_reference=reference).first()
     if ticket is None:
         logger.warning('Notch Pay : référence inconnue %s', reference)

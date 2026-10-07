@@ -12,13 +12,14 @@ class TicketSerializer(serializers.ModelSerializer):
     participant = serializers.SerializerMethodField()
     qr_payload  = serializers.SerializerMethodField()
     invitation_id = serializers.UUIDField(read_only=True)
+    offered_by  = serializers.SerializerMethodField()
 
     class Meta:
         model  = Ticket
         fields = [
             'id', 'number', 'status', 'payment_status', 'price', 'currency',
             'dress_code', 'generated_at', 'checked_in_at', 'created_at', 'invitation_id',
-            'event', 'participant', 'qr_payload',
+            'event', 'participant', 'qr_payload', 'offered_by',
         ]
 
     def get_event(self, obj):
@@ -43,6 +44,14 @@ class TicketSerializer(serializers.ModelSerializer):
             'pass_word':          pass_word(e),
             'timezone':           e.timezone,
         }
+
+    def get_offered_by(self, obj):
+        # Billet offert par un proche : son prénom et le mot qu'il a laissé
+        if not obj.purchased_by_id:
+            return None
+        gift = getattr(obj, 'gift', None)
+        return {'name': obj.purchased_by.full_name, 'first_name': obj.purchased_by.first_name,
+                'message': gift.message if gift else ''}
 
     def get_participant(self, obj):
         return obj.user.full_name

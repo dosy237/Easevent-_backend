@@ -42,6 +42,8 @@ class Notification(models.Model):
         # Compte
         SUBSCRIPTION        = 'subscription',        'Abonnement'
         MINISITE_READY      = 'minisite_ready',      'Mini-site prêt'
+        TICKET_GIFT         = 'ticket_gift',         'Billet offert'
+        QUESTION_TO_ANSWER  = 'question_to_answer',  'Question à laquelle répondre'
 
     class Category(models.TextChoices):
         EVENTS   = 'events',   'Événements'
@@ -58,6 +60,7 @@ class Notification(models.Model):
         'guest_response': 'events', 'event_full': 'events', 'event_updated': 'events',
         'event_cancelled': 'events', 'invitation_revoked': 'events',
         'payouts_ready': 'system', 'payment_refunded': 'system', 'subscription': 'system',
+        'ticket_gift': 'events', 'question_to_answer': 'messages',
     }
 
     id         = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
