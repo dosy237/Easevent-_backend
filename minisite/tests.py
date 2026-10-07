@@ -49,7 +49,7 @@ class MiniSiteTest(TestCase):
             organizer=self.orga, title='Mariage de Léa & Tom', event_type='mariage', visibility='private', status='published',
             description='Nous nous marions ! Écrivez-nous à lea.tom@exemple.fr ou au 06 12 34 56 78.',
             start_date=start, end_date=start + timedelta(hours=10), location_address='Château de Versailles, 78000 Versailles, France',
-            ambiance='elegant', palette={'primary': '#C4A882'}, dress_code='Chic', max_guests=120,
+            ambiance='elegant', palette={'primary': '#C4A882'}, dress_code='Chic', max_guests=120, theme='Bohème champêtre',
             template_config={'cover_image': 'https://img/c.jpg', 'gallery': ['https://img/1.jpg', 'https://img/2.jpg']})
         self.c = client_for(self.orga)
 
@@ -98,7 +98,9 @@ class MiniSiteTest(TestCase):
         self.assertEqual(len(a | b), 12)
 
     # ── Plusieurs modèles, rôles séparés ──────────────────────────────────
-    @override_settings(GEMINI_API_KEY='g', GROQ_API_KEY='q', MISTRAL_API_KEY='m', OPENROUTER_API_KEY='')
+    @override_settings(GEMINI_API_KEY='g', GROQ_API_KEY='q', MISTRAL_API_KEY='m', OPENROUTER_API_KEY='',
+                       MINISITE_ROLES={'direction': ('mistral', 'gemini'), 'copy': ('mistral', 'gemini', 'groq'),
+                                       'review': ('groq', 'gemini'), 'critic': ('groq', 'gemini')})
     def test_roles_et_mistral_sans_donnees_sensibles(self):
         art = {'proposals': [{'direction': d, 'font_pair': 'cormorant-lora' if d == 'luxe' else 'syne-inter',
                               'harmony': 'gold' if d == 'luxe' else 'vivid', 'hero': 'arch' if d == 'luxe' else 'poster',
@@ -120,6 +122,7 @@ class MiniSiteTest(TestCase):
         with mock.patch('minisite.ai.requests.post', side_effect=fake_post):
             props = self.generate()['proposals']
         mistral = [body for url, body in calls if 'mistral' in url]
+        self.assertNotIn('Bohème', json.dumps(mistral, ensure_ascii=False))
         self.assertEqual(len(mistral), 1)
         sent = json.dumps(mistral[0], ensure_ascii=False)
         for secret in ('Mariage de Léa', 'Versailles', 'Nous nous marions', 'Léa'):
@@ -234,3 +237,44 @@ class MiniSiteTest(TestCase):
         self.assertNotIn('lea.tom@exemple.fr', blob)
         self.assertNotIn('06 12 34 56 78', blob)
         self.assertNotIn('lea@x.fr', blob)
+
+
+    # ── Directeur de création : corrections validées ─────────────────────
+    @override_settings(GEMINI_API_KEY='g', MINISITE_ROLES={'direction': (), 'copy': (), 'review': (), 'critic': ('gemini',)})
+    def test_critique_appliquee_et_controlee(self):
+        review = {'proposals': [{
+            'direction': d, 'scores': {'hierarchy': 8, 'color': 7, 'typography': 9, 'rhythm': 6, 'copy': 7, 'distinctiveness': 8},
+            'verdict': 'Bonne base, le bouton arrive trop tard.',
+            'actions': [
+                {'type': 'move', 'kind': 'cta', 'before': 'details'},
+                {'type': 'harmony', 'value': 'gold'},
+                {'type': 'fonts', 'value': 'cormorant-lora'},
+                {'type': 'variant', 'kind': 'hero', 'value': 'inexistante'},            # ignorée
+                {'type': 'move', 'kind': 'hero', 'before': 'footer'},                  # ignorée : accueil fixe
+                {'type': 'copy', 'kind': 'hero', 'field': 'kicker', 'value': 'Un moment inoubliable'},  # charte : refusée
+            ]} for d in catalog.DIRECTION_ORDER]}
+        with mock.patch('minisite.ai.requests.post', return_value=gemini_reply(review)):
+            props = self.generate()['proposals']
+        self.assertEqual(len({p['spec']['fingerprint'] for p in props}), 6)
+        self.assertEqual(len({p['spec']['theme']['fonts'] for p in props}), 6)     # typographies toujours distinctes
+        for p in props:
+            spec = p['spec']
+            kinds = [s['kind'] for s in spec['sections']]
+            self.assertEqual(kinds[0], 'hero')
+            self.assertEqual(kinds[-1], 'footer')
+            self.assertLess(kinds.index('cta'), kinds.index('details'))
+            self.assertEqual(spec['theme']['harmony'], 'gold')
+            self.assertTrue(colors.check(spec['theme']['colors']))
+            self.assertGreaterEqual(len(spec['critique']['applied']), 1)
+            self.assertNotIn('inoubliable', spec['copy']['hero'].get('kicker', ''))
+            self.assertEqual(spec['critique']['scores']['typography'], 9)
+
+    def test_formules_interdites_rejetees(self):
+        from .copy import clean_text
+        f = {'time_text': '', 'end_time_text': '', 'price_text': '', 'description': '', 'title': ''}
+        for bad in ('Plus qu’un mariage, une promesse', 'Un moment inoubliable', 'N’hésitez pas à venir',
+                    'Ce n’est pas une fête, mais une aventure', 'Venez !!', 'On danse 🎉'):
+            self.assertIsNone(clean_text(bad, 140, f), bad)
+        self.assertEqual(clean_text('Sous les tilleuls', 40, f), 'Sous les tilleuls')
+        body = "Découvrez les algorithmes qui allègent nos villes. Pas de jargon complexe, uniquement des démonstrations réelles. Venez voir."
+        self.assertEqual(clean_text(body, 600, f), 'Découvrez les algorithmes qui allègent nos villes. Venez voir.')

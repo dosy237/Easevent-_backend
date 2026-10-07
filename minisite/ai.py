@@ -57,19 +57,24 @@ def configured(provider):
 
 
 def _extract_json(text):
-    text = (text or '').strip()
-    text = re.sub(r'^```(?:json)?|```$', '', text, flags=re.M).strip()
+    """Premier objet JSON complet de la réponse (ignore les balises ``` et le texte parasite après)."""
+    text = re.sub(r'^```(?:json)?|```$', '', (text or '').strip(), flags=re.M).strip()
+    start = text.find('{')
+    if start < 0:
+        raise ProviderError('réponse non JSON')
     try:
-        return json.loads(text)
+        obj, _ = json.JSONDecoder().raw_decode(text[start:])
+        return obj
     except ValueError:
-        start, end = text.find('{'), text.rfind('}')
-        if start >= 0 and end > start:
-            return json.loads(text[start:end + 1])
         raise ProviderError('réponse non JSON')
 
 
-def call(provider, model, system, user, timeout=None):
-    timeout = timeout or settings.MINISITE_AI_TIMEOUT
+# Rôles où une réflexion courte suffit (Gemini 3 : bien plus rapide, qualité équivalente)
+LIGHT_THINKING = {'direction', 'copy', 'review'}
+
+
+def call(provider, model, system, user, timeout=None, role=None):
+    timeout = timeout or settings.MINISITE_AI_TIMEOUTS.get(role, settings.MINISITE_AI_TIMEOUT)
     if provider == 'gemini':
         url = f'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent'
         body = {
@@ -77,6 +82,8 @@ def call(provider, model, system, user, timeout=None):
             'contents': [{'role': 'user', 'parts': [{'text': user}]}],
             'generationConfig': {'responseMimeType': 'application/json', 'temperature': 0.9},
         }
+        if model.startswith('gemini-3') and role in LIGHT_THINKING:
+            body['generationConfig']['thinkingConfig'] = {'thinkingLevel': 'low'}
         r = requests.post(url, json=body, timeout=timeout, headers={'x-goog-api-key': _key(provider)})
         if r.status_code != 200:
             raise ProviderError(f'HTTP {r.status_code}')
@@ -119,7 +126,8 @@ def run_role(role, system, user, validate, providers=None):
         for model in models:
             started = time.monotonic()
             try:
-                result = validate(call(provider, model, system, user))
+                prompt = user(provider) if callable(user) else user
+                result = validate(call(provider, model, system, prompt, role=role))
                 if not result:
                     raise ProviderError('réponse invalide')
                 log.append({'role': role, 'provider': provider, 'model': model, 'ok': True,
@@ -132,29 +140,8 @@ def run_role(role, system, user, validate, providers=None):
     return None, log, None
 
 
-# ── Direction artistique ─────────────────────────────────────────────────────
-DIRECTION_SYSTEM = (
-    "Tu es directeur artistique senior, spécialiste des invitations et sites d'événements haut de gamme. "
-    "Tu choisis, pour 6 directions artistiques imposées, les réglages d'un système de design. "
-    "Chaque proposition doit être nettement différente des autres et cohérente avec l'événement, ses couleurs, "
-    "sa saison et son ambiance. Réponds uniquement en JSON valide."
-)
-
-
-def direction_prompt(brief):
-    allowed = {
-        'directions': list(catalog.DIRECTION_ORDER),
-        'font_pair': list(catalog.FONT_PAIRS), 'radius': list(catalog.RADII), 'density': list(catalog.DENSITIES),
-        'ornament': list(catalog.ORNAMENTS), 'harmony': list(catalog.HARMONIES),
-        'hero': list(catalog.SECTIONS['hero']['variants']),
-    }
-    return (
-        f"Événement (données non sensibles) : {json.dumps(brief, ensure_ascii=False)}\n"
-        f"Valeurs autorisées : {json.dumps(allowed, ensure_ascii=False)}\n"
-        'Réponds : {"proposals": [{"direction": "...", "font_pair": "...", "radius": "...", "density": "...", '
-        '"ornament": "...", "harmony": "...", "hero": "...", "mood": "trois mots en français"}]} '
-        "— exactement une entrée par direction, toutes les paires de polices différentes, tous les « hero » différents."
-    )
+from .prompts import (COPY_SYSTEM, CRITIC_SYSTEM, DIRECTION_SYSTEM, REVIEW_SYSTEM, copy_prompt,
+                      critic_prompt, direction_prompt, review_prompt)
 
 
 def validate_direction(data):
@@ -170,53 +157,12 @@ def validate_direction(data):
         mood = item.get('mood')
         if isinstance(mood, str):
             clean['mood'] = re.sub(r'[^\w\s,’\'-]', '', mood)[:40].strip()
-        out[item['direction']] = clean
+        concept = item.get('concept')
+        if isinstance(concept, str):
+            clean['concept'] = re.sub(r'[<>{}\[\]`*#|\\]', '', concept)[:160].strip()
+        if {'font_pair', 'harmony', 'hero'} & set(clean):
+            out[item['direction']] = clean
     return out if len(out) >= 3 else None
-
-
-# ── Rédaction ────────────────────────────────────────────────────────────────
-TONES = {
-    'editorial': 'raffiné et littéraire, phrases élégantes',
-    'immersive': 'cinématographique, court et percutant',
-    'minimal': 'sobre, précis, très peu de mots',
-    'festive': 'joyeux, énergique, chaleureux',
-    'luxe': 'solennel, distingué, précieux',
-    'playful': 'ludique, complice, plein d’humour bienveillant',
-}
-COPY_SYSTEM = (
-    "Tu es concepteur-rédacteur francophone pour des invitations d'événements. Tu écris en français impeccable, "
-    "au vouvoiement, sans emoji, sans markdown. RÈGLE ABSOLUE : n'invente AUCUNE information factuelle "
-    "(heure, prix, lieu, nom, programme, nombre) — les informations pratiques sont affichées ailleurs. "
-    "Tu écris uniquement des textes d'ambiance. Réponds uniquement en JSON valide."
-)
-
-
-def copy_prompt(f):
-    fields = {k: {field: f'≤{n} caractères' for field, n in v['copy'].items()} for k, v in catalog.SECTIONS.items()}
-    event = {k: f[k] for k in ('type_label', 'title', 'description', 'ambiance', 'ambiance_label', 'season',
-                               'is_paid', 'is_online', 'dress_code', 'city')}
-    return (
-        f"Événement : {json.dumps(event, ensure_ascii=False)}\n"
-        f"Tons à respecter par direction : {json.dumps(TONES, ensure_ascii=False)}\n"
-        f"Champs à rédiger pour chaque direction : {json.dumps(fields, ensure_ascii=False)}\n"
-        'Réponds : {"proposals": [{"direction": "editorial", "hero": {"kicker": "...", "subtitle": "..."}, '
-        '"intro": {"title": "...", "body": "..."}, ...}]} — une entrée par direction '
-        f"({', '.join(catalog.DIRECTION_ORDER)}), chacune avec son propre ton."
-    )
-
-
-REVIEW_SYSTEM = (
-    "Tu es correcteur et directeur éditorial francophone. Tu relis des textes d'invitation : orthographe, "
-    "typographie française, cohérence du ton. Tu SUPPRIMES toute information factuelle qui n'est pas dans "
-    "les données de l'événement (heure, prix, lieu, nom, programme). Tu renvoies la même structure JSON, corrigée."
-)
-
-
-def review_prompt(f, proposals):
-    event = {k: f[k] for k in ('type_label', 'title', 'description', 'date_text', 'time_text', 'city',
-                               'price_text', 'dress_code')}
-    return (f"Données de l'événement : {json.dumps(event, ensure_ascii=False)}\n"
-            f'Textes à relire : {json.dumps({"proposals": proposals}, ensure_ascii=False)}')
 
 
 def validate_copy_factory(f):
@@ -230,6 +176,9 @@ def validate_copy_factory(f):
             if isinstance(item, dict) and item.get('direction') in catalog.DIRECTIONS:
                 cleaned = clean(item, f)
                 if cleaned:
+                    concept = item.get('concept')
+                    if isinstance(concept, str) and concept.strip():
+                        cleaned['_concept'] = re.sub(r'[<>{}\[\]`*#|\\]', '', concept)[:160].strip()
                     out[item['direction']] = cleaned
         return out if len(out) >= 3 else None
     return validate
@@ -239,12 +188,16 @@ def generate(f, brief, on_step=None):
     """Direction artistique et rédaction en parallèle, puis relecture. Renvoie (art, copies, journal)."""
     validate_copy = validate_copy_factory(f)
     with ThreadPoolExecutor(max_workers=2) as pool:
-        art_job = pool.submit(run_role, 'direction', DIRECTION_SYSTEM, direction_prompt(brief), validate_direction)
+        # Mistral (offre gratuite : données réutilisées) ne reçoit pas le thème, seul texte saisi du brief
+        art_job = pool.submit(run_role, 'direction', DIRECTION_SYSTEM,
+                              lambda p: direction_prompt({k: v for k, v in brief.items() if p not in SENSITIVE_FORBIDDEN or k != 'theme'}),
+                              validate_direction)
         copy_job = pool.submit(run_role, 'copy', COPY_SYSTEM, copy_prompt(f), validate_copy)
         art, art_log, _ = art_job.result()
         copies, copy_log, copy_provider = copy_job.result()
     journal = art_log + copy_log
-    if copies:
+    # Relecture séparée facultative : le directeur de création relit et réécrit déjà les textes
+    if copies and settings.MINISITE_REVIEW:
         if on_step:
             on_step('review')
         # Relecture par un AUTRE modèle que le rédacteur (regard neuf)
@@ -258,3 +211,48 @@ def generate(f, brief, on_step=None):
                 copies.setdefault(d, {}).update(c)
     return art or {}, copies or {}, journal
 
+
+
+# ── Critique (directeur de création) ────────────────────────────────────────
+CRITERIA = ('hierarchy', 'color', 'typography', 'rhythm', 'copy', 'distinctiveness')
+ACTION_TYPES = {'variant', 'tone', 'align', 'move', 'harmony', 'fonts', 'ornament', 'density', 'radius', 'copy'}
+MAX_ACTIONS = 6
+
+
+def validate_critic(data):
+    if not isinstance(data, dict) or not isinstance(data.get('proposals'), list):
+        return None
+    out = {}
+    for item in data['proposals']:
+        if not isinstance(item, dict) or item.get('direction') not in catalog.DIRECTIONS:
+            continue
+        scores = item.get('scores') if isinstance(item.get('scores'), dict) else {}
+        clean_scores = {}
+        for c in CRITERIA:
+            try:
+                clean_scores[c] = max(0, min(10, float(scores.get(c))))
+            except (TypeError, ValueError):
+                pass
+        actions = [a for a in (item.get('actions') or []) if isinstance(a, dict) and a.get('type') in ACTION_TYPES]
+        verdict = item.get('verdict') if isinstance(item.get('verdict'), str) else ''
+        out[item['direction']] = {'scores': clean_scores, 'verdict': re.sub(r'[<>{}`*#|\\]', '', verdict)[:200],
+                                  'actions': actions[:MAX_ACTIONS]}
+    return out if len(out) >= 3 else None
+
+
+def critique(f, specs, on_step=None):
+    """Revue critique des 6 propositions. Renvoie (critique par direction, journal)."""
+    from . import colors
+    if on_step:
+        on_step('critique')
+    measures = {}
+    for spec in specs:
+        c = spec['theme']['colors']
+        measures[spec['direction']] = {
+            'texte/fond': round(colors.contrast(c['text'], c['bg']), 1),
+            'secondaire/fond': round(colors.contrast(c['muted'], c['bg']), 1),
+            'bouton': round(colors.contrast(c['onPrimary'], c['primary']), 1),
+            'inverse': round(colors.contrast(c['inverseText'], c['inverseBg']), 1),
+        }
+    result, log, _ = run_role('critic', CRITIC_SYSTEM, critic_prompt(f, specs, measures), validate_critic)
+    return result or {}, log

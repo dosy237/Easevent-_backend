@@ -147,6 +147,17 @@ def _cut(text, n):
     return cut + '…'
 
 
+# Formules interdites par la charte (justification, clichés) : texte rejeté, repli sur un texte rédigé
+BANNED = re.compile(
+    r"\bplus qu['’]une?\b|\bbien plus que\b|\bpas (?:seulement|juste|simplement|uniquement)\b|\bnon pas\b"
+    r"|\bce n['’]est pas\b[^.]*\bmais\b|n['’]hésitez pas|venez nombreux|\binoubliables?\b|\bmagiques?\b"
+    r"|\bincroyables?\b|unique en son genre|nous avons le plaisir|moment de partage|rejoignez l['’]aventure"
+    r"|à ne pas manquer|!{2,}|[\U0001F300-\U0001FAFF\u2600-\u27BF]"
+    r"|\bpas de\b[^.!?]*,\s*(?:uniquement|seulement|juste|que)\b|\bpas de\b[^.!?]*\bmais\b"
+    r"|\bsans\b[^.!?]*,\s*(?:uniquement|seulement)\b", re.I)
+SENTENCE = re.compile(r'(?<=[.!?…])\s+')
+
+
 def clean_text(value, limit, f):
     if not isinstance(value, str):
         return None
@@ -154,6 +165,12 @@ def clean_text(value, limit, f):
     text = re.sub(r'\s+', ' ', text).strip(' "\'«»')
     if not text:
         return None
+    if BANNED.search(text):
+        # Texte long : on retire seulement les phrases fautives ; texte court : rejeté
+        kept = [p for p in SENTENCE.split(text) if p and not BANNED.search(p)]
+        if limit < 150 or not kept:
+            return None
+        text = ' '.join(kept)
     blob = ' '.join(str(f.get(k) or '') for k in ('time_text', 'end_time_text', 'price_text', 'description', 'title')).lower()
     for m in TIME_OR_PRICE.finditer(text):
         if m.group(0).lower().replace(' ', '') not in blob.replace(' ', ''):

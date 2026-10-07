@@ -151,6 +151,8 @@ def _mutate(spec, rng):
 def _copy_for(f, direction, rng, ai_copy, order):
     base = copywriting.fallback(f, direction, rng)
     for kind, fields in (ai_copy or {}).items():
+        if kind.startswith('_'):
+            continue
         base.setdefault(kind, {}).update(fields)
     if not f['dress_code']:
         base['dresscode']['note'] = ''
@@ -169,6 +171,8 @@ def compose(f, direction, rng, art=None, ai_copy=None, used_heroes=(), used_font
         'direction': direction,
         'label': catalog.DIRECTIONS[direction]['label'],
         'mood': art.get('mood') or '',
+        # Concept de la proposition (rédaction, sinon direction artistique) : conservé pour l'apprentissage
+        'concept': (ai_copy or {}).get('_concept') or art.get('concept') or '',
         'theme': _theme(f, direction, rng, art, used_fonts),
         'sections': _sections(order, direction, rng, art, used_heroes),
     }
@@ -194,4 +198,77 @@ def compose_batch(f, seed, art=None, copies=None, taken=frozenset()):
         heroes.add(spec['sections'][0]['variant'])
         fonts.add(spec['theme']['fonts'])
         batch.append(spec)
+    return batch
+
+
+# ── Corrections du directeur de création (validées une à une) ─────────────────
+def apply_critique(spec, review, f, used_fonts=()):
+    """Applique les actions valides ; ignore le reste. Renvoie la liste des actions appliquées."""
+    from .copy import clean_text
+    applied = []
+    sections = spec['sections']
+    by_kind = {s['kind']: s for s in sections}
+    theme = spec['theme']
+    for a in review.get('actions', []):
+        t, kind, value = a.get('type'), a.get('kind'), a.get('value')
+        ok = False
+        if t == 'variant' and kind in by_kind and value in catalog.SECTIONS[kind]['variants']:
+            by_kind[kind]['variant'] = value
+            ok = True
+        elif t == 'tone' and kind in by_kind and kind not in ('hero',) and value in catalog.TONES:
+            by_kind[kind]['tone'] = value
+            ok = True
+        elif t == 'align' and kind in by_kind and value in catalog.ALIGNS:
+            by_kind[kind]['align'] = value
+            ok = True
+        elif t == 'move' and kind in by_kind and a.get('before') in by_kind \
+                and kind not in (catalog.FIXED_FIRST, catalog.FIXED_LAST) and a.get('before') != catalog.FIXED_FIRST:
+            order = [s for s in sections if s['kind'] != kind]
+            idx = next(i for i, s in enumerate(order) if s['kind'] == a['before'])
+            order.insert(idx, by_kind[kind])
+            if _valid_order([s['kind'] for s in order]):
+                sections[:] = order
+                ok = True
+        elif t == 'harmony' and value in catalog.HARMONIES and value != theme['harmony']:
+            base = f['primary'] or colors.AMBIANCE_BASE.get(f['ambiance'], colors.AMBIANCE_BASE[''])
+            theme['alternatives'].pop(value, None)
+            theme['alternatives'][theme['harmony']] = theme['colors']
+            theme['colors'] = colors.palette(base, f['secondary'] or None, value)
+            theme['harmony'] = value
+            ok = True
+        elif t == 'fonts' and value in catalog.FONT_PAIRS and value not in used_fonts:   # garder 6 typographies distinctes
+            theme['fonts'] = value
+            ok = True
+        elif t in ('ornament', 'density', 'radius'):
+            allowed = {'ornament': catalog.ORNAMENTS, 'density': catalog.DENSITIES, 'radius': catalog.RADII}[t]
+            if value in allowed:
+                theme[t] = value
+                ok = True
+        elif t == 'copy' and kind in spec['copy'] and kind != 'faq':
+            limit = catalog.SECTIONS.get(kind, {}).get('copy', {}).get(a.get('field'))
+            text = clean_text(value, limit, f) if limit else None
+            if text:
+                spec['copy'][kind][a['field']] = text
+                ok = True
+        if ok:
+            applied.append(a)
+    # Nouvelle palette : toujours lisible (contrôle du moteur de couleurs)
+    if not colors.check(theme['colors']):
+        theme['colors'] = colors.palette(f['primary'] or colors.AMBIANCE_BASE[''], None, 'monochrome')
+        theme['harmony'] = 'monochrome'
+    return applied
+
+
+def finalize(batch, rng, taken=frozenset()):
+    """Recalcule les empreintes après corrections et garantit encore l'unicité."""
+    prints = set()
+    for spec in batch:
+        fp = fingerprint(spec)
+        tries = 0
+        while (fp in prints or fp in taken) and tries < 200:
+            _mutate(spec, rng)
+            fp = fingerprint(spec)
+            tries += 1
+        spec['fingerprint'] = fp
+        prints.add(fp)
     return batch

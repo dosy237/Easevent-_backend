@@ -130,6 +130,14 @@ def clean_style(data, event_type):
         out['ambiance'] = ambiance
         out['ambiance_label'] = label if ambiance == 'autre' else ''
 
+    if 'theme' in data:
+        theme = ' '.join(str(data.get('theme') or '').split())
+        if len(theme) > 80:
+            errors['theme'] = 'Le thème fait 80 caractères maximum.'
+        elif any(ch in theme for ch in '<>{}'):
+            errors['theme'] = 'Le thème contient des caractères non autorisés.'
+        out['theme'] = theme
+
     if 'palette' in data and data.get('palette') is not None:
         palette = data.get('palette')
         if not isinstance(palette, dict):

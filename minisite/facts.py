@@ -61,6 +61,7 @@ def facts(event):
         'description': scrub(event.description)[:900],
         'ambiance': event.ambiance or '',
         'ambiance_label': event.ambiance_label or '',
+        'theme': scrub(getattr(event, 'theme', '') or '')[:80],
         'primary': palette.get('primary') or '',
         'secondary': palette.get('secondary') or '',
         'date_text': date_fr(start) if start else '',
@@ -94,7 +95,7 @@ def size_bucket(n):
 def art_brief(f):
     """Direction artistique : uniquement des données non sensibles."""
     return {
-        'type': f['type'], 'ambiance': f['ambiance'], 'primary_color': f['primary'], 'secondary_color': f['secondary'],
+        'type': f['type'], 'theme': f['theme'], 'ambiance': f['ambiance'], 'primary_color': f['primary'], 'secondary_color': f['secondary'],
         'season': f['season'], 'duration_hours': f['duration_h'], 'photos': f['images'],
         'paid': f['is_paid'], 'online': f['is_online'], 'size': size_bucket(f['max_guests']),
         'dress_code': bool(f['dress_code']), 'visibility': f['visibility'],

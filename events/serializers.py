@@ -71,6 +71,7 @@ class EventPublicSerializer(serializers.ModelSerializer):
             'view_count',
             'ambiance',
             'ambiance_label',      # ambiance libre quand ambiance = « autre »
+            'theme',               # thème de l'événement (fil conducteur du mini-site)
             'palette',             # couleurs choisies librement {primary, secondary}
             'subdomain',
             'cover_image',      # calculé — URL de l'image de couverture

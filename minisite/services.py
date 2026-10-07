@@ -3,6 +3,7 @@ minisite/services.py — génération, choix, retouches et affichage des mini-si
 """
 import copy as deepcopy_mod
 import logging
+import random
 import uuid
 from datetime import timedelta
 
@@ -16,7 +17,7 @@ from .facts import art_brief, facts
 from .models import MiniSiteGeneration, MiniSiteProposal
 
 logger = logging.getLogger(__name__)
-STALE = timedelta(minutes=4)
+STALE = timedelta(minutes=6)
 PLAN_NAMES = {'free': 'Gratuit', 'standard': 'Standard', 'pro': 'Pro'}
 
 
@@ -90,9 +91,21 @@ def run(gen_id):
         art, copies, journal = ai.generate(f, art_brief(f), on_step=lambda s: _step(gen.id, s))
         _step(gen.id, 'composition')
         seed = uuid.UUID(str(gen.id)).int % (2 ** 31)
+        batch = composer.compose_batch(f, seed, art, copies)
+        # Revue du directeur de création : notes, verdict, corrections validées une à une
+        review, review_log = ai.critique(f, batch, on_step=lambda s: _step(gen.id, s))
+        journal += review_log
+        for spec in batch:
+            r = review.get(spec['direction'])
+            if r:
+                others = {o['theme']['fonts'] for o in batch if o is not spec}
+                spec['critique'] = {'scores': r['scores'], 'verdict': r['verdict'],
+                                    'applied': composer.apply_critique(spec, r, f, others)}
+        _step(gen.id, 'composition')
+        rng = random.Random(seed)
         taken = set()
-        for attempt in range(6):
-            batch = composer.compose_batch(f, seed + attempt, art, copies, frozenset(taken))
+        for _ in range(6):
+            composer.finalize(batch, rng, frozenset(taken))
             clash = set(MiniSiteProposal.objects.filter(fingerprint__in=[s['fingerprint'] for s in batch])
                         .values_list('fingerprint', flat=True))
             if not clash:
@@ -103,15 +116,16 @@ def run(gen_id):
                 MiniSiteProposal(generation=gen, index=i, direction=s['direction'], spec=s, fingerprint=s['fingerprint'])
                 for i, s in enumerate(batch)])
             gen.status, gen.step, gen.finished_at = MiniSiteGeneration.Status.DONE, 'done', timezone.now()
-            gen.engine = {'calls': journal, 'ai_direction': bool(art), 'ai_copy': bool(copies)}
+            gen.engine = {'calls': journal, 'ai_direction': bool(art), 'ai_copy': bool(copies), 'ai_critic': bool(review)}
             gen.save(update_fields=['status', 'step', 'finished_at', 'engine'])
         dataset.write('generation', {
             'generation': str(gen.id), 'organizer': dataset.pseudonym(event.organizer_id),
             'plan': event.organizer.subscription_plan, 'brief': art_brief(f),
-            'content': {k: f[k] for k in ('type_label', 'title', 'description', 'ambiance_label', 'dress_code', 'city')},
+            'content': {k: f[k] for k in ('type_label', 'title', 'theme', 'description', 'ambiance_label', 'dress_code', 'city')},
             'ai': {'direction': art, 'copy': copies}, 'calls': journal,
-            'proposals': [{'direction': s['direction'], 'fingerprint': s['fingerprint'], 'theme': s['theme'],
-                           'sections': s['sections'], 'copy': s['copy']} for s in batch],
+            'proposals': [{'direction': s['direction'], 'fingerprint': s['fingerprint'], 'concept': s.get('concept'),
+                           'critique': s.get('critique'), 'theme': s['theme'], 'sections': s['sections'],
+                           'copy': s['copy']} for s in batch],
         })
         from notifications.services import notify
         notify(event.organizer, 'minisite_ready', 'Votre mini-site est prêt',

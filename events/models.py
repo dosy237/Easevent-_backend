@@ -141,6 +141,8 @@ class Event(models.Model):
     ambiance = models.CharField(max_length=15, choices=Ambiance.choices, blank=True, default='')
     # Ambiance libre quand l'organisateur choisit « Autre » (ex. « Bohème »)
     ambiance_label = models.CharField(max_length=40, blank=True, default='', verbose_name="Ambiance personnalisée")
+    # Thème de l'événement (« Bohème champêtre », « IA & climat ») : fil conducteur du mini-site
+    theme = models.CharField(max_length=80, blank=True, default='', verbose_name="Thème")
 
     # ── Sous-domaine et domaine personnalisé ─────────────────
     subdomain = models.CharField(
