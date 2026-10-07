@@ -42,6 +42,10 @@ def usage(event):
 def start(event, user):
     if event.deleted_at is not None:
         raise MiniSiteError('Événement introuvable.', 'not_found', 404)
+    if not (event.theme or '').strip():
+        # Le thème est le fil conducteur de toute la rédaction : sans lui, le texte serait générique
+        raise MiniSiteError("Indiquez d'abord le thème de l'événement : tout le contenu du mini-site en découle.",
+                            'theme_required', 409)
     running = event.minisite_generations.filter(
         status__in=(MiniSiteGeneration.Status.PENDING, MiniSiteGeneration.Status.RUNNING),
         created_at__gte=timezone.now() - STALE).first()

@@ -37,8 +37,9 @@ CHARTER = """CHARTE D'ÉCRITURE (non négociable)
 1. Spécifique plutôt que générique. Chaque proposition s'ancre dans au moins un élément concret du
    brief (titre, thème, description, ambiance, saison, ville, type). Un texte qui pourrait servir
    à n'importe quel événement est un échec.
-2. Le thème est le fil conducteur. S'il est fourni, il nourrit le vocabulaire, les images et les
-   métaphores de toute la proposition — par évocation, jamais en le répétant mot pour mot partout.
+2. Le thème est le fil conducteur de TOUT le texte (voir « THÈME » dans le brief). Chaque bloc s'y
+   rattache : accroche, sous-titre, présentation, titres de section, bouton. On le reconnaît
+   à chaque ligne, par évocation et par le choix des mots, jamais en le recopiant mot pour mot partout.
 3. Affirmer, ne pas justifier. INTERDIT : les constructions de contraste ou de justification
    (« pas X, mais Y », « non pas… mais… », « plus qu'un…, un… », « bien plus que », « pas
    seulement… »), les phrases qui expliquent pourquoi le texte existe.
@@ -55,8 +56,9 @@ CHARTER = """CHARTE D'ÉCRITURE (non négociable)
    point médian.
 8. Français impeccable : guillemets « », apostrophe typographique ’, pas d'anglicisme inutile,
    pas d'emoji, pas de hashtag, pas de markdown, au plus un point d'exclamation par proposition.
-9. Vérité. N'invente AUCUN fait : ni heure, ni prix, ni lieu, ni nom, ni programme, ni intervenant,
-   ni nombre, ni promesse (repas, cadeau, surprise). En cas de doute, évoque une sensation."""
+9. Vérité. N'invente AUCUN fait : ni heure, ni durée (« une heure », « trois jours »), ni prix, ni lieu
+   ni décor (« amphithéâtre », « salle », « jardin » absents du brief), ni nom, ni programme, ni
+   intervenant, ni nombre, ni promesse (repas, cadeau, surprise). En cas de doute, évoque une sensation."""
 
 TYPE_GUIDES = {
     'mariage': "Mariage — émotion sincère et pudique, célébration d'un engagement, gratitude envers les proches. "
@@ -91,10 +93,42 @@ enthousiasme, « ludique » signifie accessibilité et curiosité, « luxe » si
 exigence : jamais de vocabulaire de fête, de familiarité ni de second degré. Pour une célébration
 (mariage, anniversaire, gala), « minimal » reste chaleureux et « immersif » reste intime."""
 
+# Deux lectures du thème selon le type d'événement
+SUBJECT_TYPES = {'conference', 'seminaire', 'atelier', 'exposition'}
+THEME_AS_SUBJECT = """THÈME = LE SUJET TRAITÉ. Le texte parle de ce sujet, pas de l'événement en général :
+- la présentation pose l'enjeu du sujet (ce qui change, ce qui est en jeu, pour qui) et les
+  questions qu'il soulève, formulées avec justesse ; elle dit ce que le public comprendra ou saura
+  faire en repartant ;
+- l'accroche et le sous-titre condensent l'angle choisi sur ce sujet (chaque proposition peut
+  prendre un angle différent : l'enjeu, la question, la méthode, l'avenir) ;
+- les titres de section empruntent au vocabulaire du sujet ;
+- précision d'expert, sans jargon gratuit ; n'invente ni chiffre, ni étude, ni intervenant, ni
+  conclusion : pose des questions, nomme des notions, décris l'enjeu."""
+THEME_AS_UNIVERSE = """THÈME = L'UNIVERS DE L'ÉVÉNEMENT (esthétique et émotion). Il donne les images, les matières,
+les couleurs, la lumière et les sensations du texte : un mariage « Amour et bohème » parle de
+fleurs des champs, de lin, de lumière dorée, de liberté et de tendresse ; une soirée « Nuit
+tropicale » de chaleur, de palmes, de rythme. Chaque proposition explore une facette de cet univers."""
+THEME_FREE = """THÈME : s'il énonce un sujet (une question, un domaine, un enjeu), traite-le comme le sujet du
+texte (enjeu, questions, ce que l'on en retire, sans rien inventer). S'il évoque une ambiance,
+traite-le comme l'univers esthétique et émotionnel du texte."""
+
+
+def theme_rule(f):
+    if f.get('type') in SUBJECT_TYPES:
+        return THEME_AS_SUBJECT
+    if f.get('type') == 'autre':
+        return THEME_FREE
+    return THEME_AS_UNIVERSE
+
+
 EXAMPLES = """EXEMPLES DE NIVEAU ATTENDU (pour calibrer, ne jamais les réutiliser)
 ✗ À proscrire : « Plus qu'un événement, une expérience inoubliable ! N'hésitez pas à venir nombreux. »
 ✓ Conférence, thème « IA & climat », ton éditorial :
    accroche « Données, climat, décisions » · sous-titre « Une journée pour passer des modèles aux actes. »
+✓ Conférence, thème « Les écrans et l'attention des enfants », ton immersif :
+   accroche « Regarder, retenir » · présentation « Notifications, vidéos courtes, jeux sans fin : l'attention
+   des enfants se forme aujourd'hui face aux écrans. Que devient leur capacité à se concentrer, à
+   mémoriser, à s'ennuyer ? Une soirée pour comprendre ce qui se joue et repartir avec des repères. »
 ✓ Mariage, thème « Bohème champêtre », ton luxe :
    accroche « Sous les tilleuls » · présentation « Dix ans après notre première rencontre, nous nous
    dirons oui à l'ombre des grands arbres. Votre présence comptera parmi nos plus beaux souvenirs. »
@@ -205,6 +239,7 @@ def copy_prompt(f):
     guide = TYPE_GUIDES.get(f['type'], TYPE_GUIDES['autre'])
     return (
         f"BRIEF DE L'ÉVÉNEMENT\n{_brief_block(f)}\n\n"
+        f"THÈME — FIL CONDUCTEUR DE TOUT LE TEXTE : « {f.get('theme') or 'non précisé'} »\n{theme_rule(f)}\n\n"
         f"CONSIGNES DU TYPE\n{guide}\n\n"
         f"LES 6 TONS (un par proposition)\n" + '\n'.join(f'- {d} : {t}' for d, t in TONES.items()) + "\n\n"
         f"CHAMPS À RÉDIGER (pour chaque direction)\n{json.dumps(fields, ensure_ascii=False)}\n"
@@ -230,6 +265,7 @@ excellent. Renvoie exactement la même structure JSON, complète et corrigée.""
 
 def review_prompt(f, proposals):
     return (f"BRIEF DE L'ÉVÉNEMENT\n{_brief_block(f)}\n\n"
+            f"THÈME : « {f.get('theme') or 'non précisé'} »\n{theme_rule(f)}\n\n"
             f'TEXTES À RELIRE\n{json.dumps({"proposals": proposals}, ensure_ascii=False)}')
 
 
@@ -247,7 +283,9 @@ GRILLE D'ÉVALUATION (note chaque critère de 0 à 10)
 - typography : la paire de polices sert le type et le thème ; script réservé au cérémonieux.
 - rhythm : composition variée (pas trois sections au même rendu à la suite), respiration, galerie
   placée selon le nombre de photos, la fin de page conclut.
-- copy : charte respectée (spécifique, sans cliché ni justification, thème présent, bouton clair).
+- copy : charte respectée (spécifique, sans cliché ni justification, bouton clair) et THÈME traité dans
+  chaque bloc : le sujet pour une conférence ou un atelier (enjeu, questions), l'univers pour une
+  célébration. Un texte qui pourrait servir avec un autre thème mérite au plus 4, et des réécritures.
 - distinctiveness : la proposition est reconnaissable parmi les 6 et a un concept net.
 
 ACTIONS CORRECTIVES AUTORISÉES (au plus 6 par proposition, uniquement si elles améliorent nettement)
@@ -281,6 +319,7 @@ def critic_prompt(f, specs, measures):
         })
     return (
         f"BRIEF DE L'ÉVÉNEMENT\n{_brief_block(f)}\nPhotos disponibles : {f['images']}\n\n"
+        f"THÈME : « {f.get('theme') or 'non précisé'} »\n{theme_rule(f)}\n\n"
         f"BIBLIOTHÈQUE (sections et variantes)\n{json.dumps(library, ensure_ascii=False)}\n"
         f"Polices : {json.dumps(FONT_NOTES, ensure_ascii=False)}\nHarmonies : {json.dumps(HARMONY_NOTES, ensure_ascii=False)}\n"
         f"Ornements : {', '.join(catalog.ORNAMENTS)} · Formes : {', '.join(catalog.RADII)} · Densités : {', '.join(catalog.DENSITIES)}\n\n"

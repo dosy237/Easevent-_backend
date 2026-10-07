@@ -150,7 +150,9 @@ class Event(models.Model):
     # Fuseau horaire du lieu de l'événement (IANA : « Europe/Paris », « Africa/Douala »)
     timezone = models.CharField(max_length=64, default='Europe/Paris', verbose_name="Fuseau horaire")
     # Thème de l'événement (« Bohème champêtre », « IA & climat ») : fil conducteur du mini-site
-    theme = models.CharField(max_length=80, blank=True, default='', verbose_name="Thème")
+    # Fil conducteur du mini-site : le SUJET d'une conférence (« L'impact de l'IA sur nos capacités
+    # cognitives »), l'UNIVERS d'une célébration (« Amour et bohème »)
+    theme = models.CharField(max_length=160, blank=True, default='', verbose_name="Thème")
 
     # ── Sous-domaine et domaine personnalisé ─────────────────
     subdomain = models.CharField(

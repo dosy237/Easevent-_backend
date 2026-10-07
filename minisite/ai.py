@@ -73,6 +73,50 @@ def _extract_json(text):
 LIGHT_THINKING = {'direction', 'copy', 'review'}
 
 
+RETRY_429_MAX = 25          # secondes : au-delà, on passe directement au modèle de secours
+
+
+def _retry_delay(r):
+    """Délai conseillé par le fournisseur après un 429 (en-tête Retry-After, ou retryDelay de Gemini)."""
+    try:
+        return float((getattr(r, 'headers', None) or {}).get('Retry-After'))
+    except (TypeError, ValueError):
+        pass
+    try:
+        for d in r.json().get('error', {}).get('details', []):
+            if str(d.get('retryDelay', '')).endswith('s'):
+                return float(d['retryDelay'][:-1])
+    except (ValueError, AttributeError, TypeError):
+        pass
+    return None
+
+
+def _exhausted_key(provider, model):
+    return f'minisite:ai:exhausted:{provider}:{model}'
+
+
+def exhausted(provider, model):
+    from django.core.cache import cache
+    return bool(cache.get(_exhausted_key(provider, model)))
+
+
+def _post(url, quota_key=None, **kw):
+    """
+    Quota gratuit atteint (429) : une seule nouvelle tentative si l'attente conseillée est courte ;
+    sinon (quota du jour épuisé), le modèle est écarté jusqu'à sa remise à zéro (6 h au plus).
+    """
+    r = requests.post(url, **kw)
+    if r.status_code == 429:
+        delay = _retry_delay(r)
+        if delay is not None and delay <= RETRY_429_MAX:
+            time.sleep(delay + 0.5)
+            r = requests.post(url, **kw)
+        elif quota_key and delay:
+            from django.core.cache import cache
+            cache.set(quota_key, 1, int(min(delay, 6 * 3600)))
+    return r
+
+
 def call(provider, model, system, user, timeout=None, role=None):
     timeout = timeout or settings.MINISITE_AI_TIMEOUTS.get(role, settings.MINISITE_AI_TIMEOUT)
     if provider == 'gemini':
@@ -84,7 +128,8 @@ def call(provider, model, system, user, timeout=None, role=None):
         }
         if model.startswith('gemini-3') and role in LIGHT_THINKING:
             body['generationConfig']['thinkingConfig'] = {'thinkingLevel': 'low'}
-        r = requests.post(url, json=body, timeout=timeout, headers={'x-goog-api-key': _key(provider)})
+        r = _post(url, quota_key=_exhausted_key(provider, model), json=body, timeout=timeout,
+                  headers={'x-goog-api-key': _key(provider)})
         if r.status_code != 200:
             raise ProviderError(f'HTTP {r.status_code}')
         try:
@@ -101,7 +146,7 @@ def call(provider, model, system, user, timeout=None, role=None):
         headers = {'Authorization': f'Bearer {_key(provider)}'}
         if provider == 'openrouter':
             headers.update({'HTTP-Referer': settings.PUBLIC_BASE_URL, 'X-Title': 'Easevent'})
-        r = requests.post(OPENAI_STYLE[provider], json=body, timeout=timeout, headers=headers)
+        r = _post(OPENAI_STYLE[provider], quota_key=_exhausted_key(provider, model), json=body, timeout=timeout, headers=headers)
         if r.status_code != 200:
             raise ProviderError(f'HTTP {r.status_code}')
         try:
@@ -124,6 +169,9 @@ def run_role(role, system, user, validate, providers=None):
         if role in FAST_FIRST:
             models = models[::-1]                    # relecture : le modèle rapide d'abord
         for model in models:
+            if exhausted(provider, model):
+                log.append({'role': role, 'provider': provider, 'model': model, 'ok': False, 'ms': 0, 'error': 'quota du jour épuisé'})
+                continue
             started = time.monotonic()
             try:
                 prompt = user(provider) if callable(user) else user

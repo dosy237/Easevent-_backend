@@ -64,7 +64,7 @@ def facts(event):
         'description': scrub(event.description)[:900],
         'ambiance': event.ambiance or '',
         'ambiance_label': event.ambiance_label or '',
-        'theme': scrub(getattr(event, 'theme', '') or '')[:80],
+        'theme': scrub(getattr(event, 'theme', '') or '')[:160],
         'primary': palette.get('primary') or '',
         'secondary': palette.get('secondary') or '',
         'date_text': date_fr(start) if start else '',

@@ -247,6 +247,50 @@ class MiniSiteTest(TestCase):
         with mock.patch('cloudinary.config', return_value=mock.Mock(cloud_name='')):
             self.assertEqual(self.c.patch(url, {'banner': {'image': own}}, format='json').status_code, 400)
 
+    def test_theme_obligatoire_et_lu_selon_le_type(self):
+        from minisite import prompts
+        from minisite.facts import facts
+        Event.objects.filter(pk=self.event.pk).update(theme='')
+        r = self.c.post(f'/api/events/{self.event.id}/minisite/generate/', {}, format='json')
+        self.assertEqual((r.status_code, r.data['code']), (409, 'theme_required'))
+        # Sujet long d'une conférence : 160 caractères, traité comme le sujet du texte
+        sujet = "L'impact de l'intelligence artificielle sur les capacités cognitives de l'homme : mémoire, attention, jugement"
+        self.event.theme, self.event.event_type = sujet, 'conference'
+        self.event.save()
+        f = facts(self.event)
+        self.assertEqual(f['theme'], sujet)
+        p = prompts.copy_prompt(f)
+        self.assertIn(sujet, p)
+        self.assertIn('LE SUJET TRAITÉ', p)
+        # Mariage : le thème est un univers
+        self.event.theme, self.event.event_type = 'Amour et bohème', 'mariage'
+        self.event.save()
+        p = prompts.copy_prompt(facts(self.event))
+        self.assertIn("L'UNIVERS DE L'ÉVÉNEMENT", p)
+        self.assertIn('Amour et bohème', prompts.critic_prompt(facts(self.event), [], {}))
+        r = self.c.patch(f'/api/events/{self.event.id}/update/', {'theme': 'x' * 161}, format='json')
+        self.assertEqual(r.status_code, 400)
+
+    def test_quota_429_une_seule_nouvelle_tentative_courte(self):
+        from minisite import ai
+        busy = mock.Mock(status_code=429, headers={}, json=lambda: {'error': {'details': [{'retryDelay': '3s'}]}})
+        ok = mock.Mock(status_code=200)
+        with mock.patch('minisite.ai.requests.post', side_effect=[busy, ok]) as post, mock.patch('minisite.ai.time.sleep') as sleep:
+            self.assertIs(ai._post('https://x'), ok)
+        self.assertEqual(post.call_count, 2)
+        sleep.assert_called_once_with(3.5)
+        long_wait = mock.Mock(status_code=429, headers={'Retry-After': '60'})
+        with mock.patch('minisite.ai.requests.post', return_value=long_wait) as post, mock.patch('minisite.ai.time.sleep') as sleep:
+            self.assertEqual(ai._post('https://x').status_code, 429)     # attente trop longue : modèle de secours
+        self.assertEqual(post.call_count, 1)
+        sleep.assert_not_called()
+        # Quota du jour épuisé : le modèle est écarté sans nouvel appel
+        daily = mock.Mock(status_code=429, headers={'Retry-After': '30000'})
+        with mock.patch('minisite.ai.requests.post', return_value=daily):
+            ai._post('https://x', quota_key=ai._exhausted_key('gemini', 'm1'))
+        self.assertTrue(ai.exhausted('gemini', 'm1'))
+        self.assertFalse(ai.exhausted('gemini', 'm2'))
+
     def test_journal_d_apprentissage(self):
         self.choose_first()
         lines = []
