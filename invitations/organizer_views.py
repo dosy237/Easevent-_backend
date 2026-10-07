@@ -107,9 +107,13 @@ def _guest_rows(event):
 
     invitations = list(event.invitations.exclude(status='revoked')
                        .select_related('invited_user').order_by('-sent_at'))
-    user_ids = [inv.invited_user_id for inv in invitations if inv.invited_user_id]
+    invited_ids = {inv.invited_user_id for inv in invitations if inv.invited_user_id}
+    # Participants venus d'eux-mêmes (événement public) : ticket sans invitation
+    walk_ins = list(Ticket.objects.select_related('user').filter(event=event, status__in=Ticket.ACTIVE)
+                    .exclude(user_id__in=invited_ids).order_by('-created_at'))
+    user_ids = list(invited_ids) + [t.user_id for t in walk_ins]
     tickets = {t.user_id: t for t in Ticket.objects.filter(
-        event=event, user_id__in=user_ids, status__in=Ticket.ACTIVE)}
+        event=event, user_id__in=list(invited_ids), status__in=Ticket.ACTIVE)}
     now = timezone.now()
     from rsvp.services import answers_by_user
     rsvp = answers_by_user(event, user_ids)
@@ -162,6 +166,24 @@ def _guest_rows(event):
             # Compatibilité avec l'ancien écran (E08)
             'user': ({'id': str(user.id), 'first_name': user.first_name, 'last_name': user.last_name,
                       'avatar_url': user.avatar_url} if user else {'email': inv.email or '', 'phone_number': mask_phone(phone)}),
+        })
+    for t in walk_ins:
+        user = t.user
+        display = 'confirmed' if t.status == Ticket.Status.GENERATED else 'to_validate'
+        bucket = 'confirmed' if display == 'confirmed' else 'pending'
+        counts['total'] += 1
+        counts[bucket] += 1
+        rows.append({
+            'id': f'ticket-{t.id}', 'source': 'ticket', 'status': 'confirmed', 'display_status': display,
+            'bucket': bucket, 'kind': 'member', 'channel': 'public',
+            'name': user.full_name, 'initials': initials(user.first_name, user.last_name),
+            'avatar_url': user.avatar_url, 'user_id': str(user.id), 'email': '', 'phone': '',
+            'delivery_status': 'in_app', 'ticket_status': t.status, 'payment_status': t.payment_status,
+            'checked_in_at': t.checked_in_at.isoformat() if t.checked_in_at else None,
+            'sent_at': None, 'opened_at': None, 'responded_at': t.created_at.isoformat(), 'reminded_at': None,
+            'can_remind': False, 'rsvp': rsvp.get(user.id, []),
+            'user': {'id': str(user.id), 'first_name': user.first_name, 'last_name': user.last_name,
+                     'avatar_url': user.avatar_url},
         })
     return rows, counts
 

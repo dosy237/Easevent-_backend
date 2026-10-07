@@ -82,4 +82,4 @@ def check_in(request, event_id):
                              'participant': _person(ticket), 'counts': _counts(event)})
         ticket.checked_in_at = timezone.now()
         ticket.save(update_fields=['checked_in_at', 'updated_at'])
-    return Response({'result': 'ok', 'detail': 'Bienvenue !', 'participant': _person(ticket), 'counts': _counts(event)})
+    return Response({'result': 'ok', 'detail': 'Entrée validée.', 'participant': _person(ticket), 'counts': _counts(event)})

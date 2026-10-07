@@ -194,6 +194,13 @@ class LifecycleTest(TestCase):
         n = Notification.objects.get(user=self.orga, type='guest_response')
         self.assertIn('participe', n.body)
 
+    def test_participants_venus_d_eux_memes_dans_la_liste(self):
+        Ticket.objects.create(event=self.public, user=self.paul, status='generated', price='0')
+        data = self.orga_c.get(f'/api/events/{self.public.id}/participants/').data
+        row = data['participants'][0]
+        self.assertEqual((row['name'], row['source'], row['display_status']), ('Paul T', 'ticket', 'confirmed'))
+        self.assertEqual(data['counts']['confirmed'], 1)
+
     # ── Messagerie ────────────────────────────────────────────
     def test_organisateur_n_ecrit_qu_a_ses_invites(self):
         r = self.orga_c.post('/api/conversations/', {'event_id': str(self.public.id), 'participant_id': str(self.zoe.id)},

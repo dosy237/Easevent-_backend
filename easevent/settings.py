@@ -68,6 +68,7 @@ AUTH_USER_MODEL = 'users.User'
 # APPLICATIONS
 # ─────────────────────────────────────────────────────────────
 INSTALLED_APPS = [
+    'daphne',               # runserver sert aussi les WebSocket (Channels) — doit rester en tête
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
