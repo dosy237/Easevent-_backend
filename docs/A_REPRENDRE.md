@@ -31,9 +31,19 @@ dédié), après validation de l'expéditeur sur SendGrid.
 ## 3. Configuration Stripe (tableau de bord)
 
 - [ ] Activer Connect (comptes Express).
-- [ ] Webhook (événements des comptes connectés inclus) : `checkout.session.completed`,
-      `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`,
-      `checkout.session.expired`, `account.updated`, `charge.refunded`.
+- [ ] Webhook `https://easevent.nitypulse.com/api/stripe/webhook/` (événements des comptes
+      connectés inclus) : `checkout.session.completed`, `checkout.session.async_payment_succeeded`,
+      `checkout.session.async_payment_failed`, `checkout.session.expired`, `account.updated`,
+      `charge.refunded`, **abonnements** : `customer.subscription.created`,
+      `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.payment_failed`.
+- [ ] Abonnements : rien à créer dans Stripe, les produits « Easevent Standard » / « Easevent Pro »
+      et leurs prix (9,99 €/mois, 99,90 €/an ; 24,99 €/mois, 249,90 €/an) sont créés au premier achat.
+      Pour d'autres prix : créer les prix dans Stripe et renseigner `STRIPE_PRICE_STANDARD_MONTHLY`,
+      `STRIPE_PRICE_STANDARD_ANNUAL`, `STRIPE_PRICE_PRO_MONTHLY`, `STRIPE_PRICE_PRO_ANNUAL`.
+- [ ] Portail client (factures, carte, résiliation) : Stripe › Paramètres › Billing ›
+      Portail client › « Activer » (une fois, en test puis en production).
+- Remboursements automatiques : annulation d'un événement ou invitation retirée → remboursement
+  intégral du participant (virement à l'organisateur et commission repris).
 - [ ] Activer le prélèvement SEPA.
 - Commission Easevent : 3 % (`PLATFORM_FEE_PERCENT`).
 
@@ -78,17 +88,31 @@ depuis plus de 10 minutes, et les rappels / bilans sont calculés à l'ouverture
 - [ ] `PUBLIC_BASE_URL=https://easevent.nitypulse.com` (en **https**) : utilisée dans les liens
       des emails (invitations, rappels), des PDF et des retours Stripe, y compris depuis Celery.
 
-## 8. Plus tard : notifications push (application fermée)
+## 8. Notifications push (application fermée) — prêt, à activer
 
-- [ ] Projet Firebase + `google-services.json` (Android) et compte Expo (EAS) pour les jetons push.
-      Les tâches Celery existantes enverront alors aussi les push.
+Le serveur envoie les push via le service Expo (qui relaie vers Firebase / Apple). À faire une fois :
+- [ ] Compte Expo + `npx eas-cli login`, puis dans le dossier de l'application : `npx eas-cli init`
+      (ajoute `extra.eas.projectId` à `app.json` : sans lui, l'app ne demande pas de jeton push).
+- [ ] Android : projet Firebase (console.firebase.google.com) › Paramètres › Comptes de service ›
+      « Générer une clé privée » (JSON), puis `npx eas-cli credentials` › Android › Push
+      Notifications (FCM V1) › importer ce fichier JSON.
+- [ ] iOS (plus tard) : `eas credentials` crée la clé APNs automatiquement.
+- [ ] Facultatif : `EXPO_ACCESS_TOKEN` dans le `.env` si « Enhanced security for push » est activé
+      sur expo.dev.
+- Réglage : `PUSH_ENABLED=True` (par défaut). Chaque utilisateur choisit dans Notifications ›
+      Préférences (téléphone, messages, réponses des invités, rappels, bilan du jour).
 
-## 9. Messagerie en temps réel (plus tard, facultatif)
+## 9. Messagerie instantanée (WebSocket) — à déployer
 
-La messagerie (M15 / M16) se met à jour toutes les 4 s quand une conversation est
-ouverte (seuls les nouveaux messages sont téléchargés). Pour du temps réel strict,
-Django Channels + Redis (déjà dans requirements.txt) pourront remplacer ce mécanisme
-sans changer l'API.
+Service `realtime` (daphne, Django Channels + Redis) ajouté dans `docker-compose.yml`, port
+local 8010. Messages, « en train d'écrire », accusés de lecture et badges arrivent en direct.
+- [ ] `docker compose up -d --build` démarre aussi `realtime` (vérifier `docker compose ps`).
+- [ ] nginx du serveur : reprendre le bloc `location /ws/` de `nginx.conf` (en-têtes Upgrade),
+      ainsi que `client_max_body_size 15m` (photos de la messagerie) et l'en-tête
+      `Access-Control-Allow-Origin` sur `/static/` (logo de la version web), puis `nginx -s reload`.
+- [ ] Si le HTTPS est géré par certbot sur ce nginx : le bloc 443 doit contenir les mêmes
+      `location` (certbot les recopie si on relance `certbot --nginx`).
+Sans ce service, l'application continue de fonctionner : elle interroge le serveur toutes les 4 s.
 
 ## 10. Ouverture de l'app depuis les liens d'invitation et stores
 
@@ -111,3 +135,29 @@ Retrouver une invitation après installation :
 - Android : automatique (referrer du Play Store).
 - Tous : le numéro vérifié par SMS (Profil › Téléphone, ou bannière dans Mes tickets) et l'email
   vérifié rattachent automatiquement les invitations reçues. Nécessite Twilio (section 4).
+
+
+## 11. Générer l'APK / l'AAB
+
+Fichiers prêts : `eas.json` (profils `preview` = APK à installer, `production` = AAB pour le
+Play Store), `app.json` (nom « Easevent », icône, icône Android adaptative + monochrome,
+écran de démarrage, permissions limitées : contacts, appareil photo, notifications).
+- [ ] `npm ci` puis `npx eas-cli build -p android --profile preview` → lien de l'APK.
+- [ ] Play Store : `npx eas-cli build -p android --profile production` puis
+      `npx eas-cli submit -p android`.
+- L'adresse du serveur est fixée dans `eas.json` (`EXPO_PUBLIC_API_URL`) : à changer en cas de
+  nouvel hébergement (toujours en https).
+- Vérifications locales déjà faites : dépendances alignées sur Expo SDK 54, génération du projet
+  Android (`expo prebuild`), compilation JavaScript Android (Hermes) sans erreur.
+
+## 12. Connexion Google / Apple (masquée pour l'instant)
+
+Les boutons n'apparaissent pas tant que `EXPO_PUBLIC_OAUTH_ENABLED` n'est pas à `true`.
+- [ ] Fournir : identifiants OAuth Google (clients Android, iOS et Web) et, pour iOS,
+      « Sign in with Apple » (Apple Developer). La connexion sera alors branchée.
+
+## 13. Textes juridiques
+
+- [ ] Faire relire les Conditions d'utilisation (écran CGU) et la politique de confidentialité
+      par un juriste : société, médiateur de la consommation, âge minimum, conditions de
+      remboursement des abonnements.
