@@ -216,6 +216,11 @@ def refund_ticket(ticket, reason='requested_by_customer'):
     from notifications.services import notify
     if ticket.payment_status == Ticket.PaymentStatus.REFUNDED:
         return True
+    if ticket.mobile_money_reference and not ticket.stripe_payment_intent_id:
+        # Mobile Money : remboursement à faire depuis le tableau de bord Notch Pay (signalé à l'administration)
+        logger.error('Remboursement Mobile Money à faire : billet %s, référence %s, %s FCFA',
+                     ticket.id, ticket.mobile_money_reference, ticket.mobile_money_amount)
+        return False
     if not ticket.stripe_payment_intent_id:
         logger.error('Remboursement impossible : ticket %s sans paiement Stripe', ticket.id)
         return False

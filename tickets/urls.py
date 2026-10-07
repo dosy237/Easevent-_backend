@@ -17,5 +17,9 @@ urlpatterns = [
     path('payments/connect/onboard/',         views.connect_onboard,   name='connect-onboard'),
     path('payments/connect/dashboard/',       views.connect_dashboard, name='connect-dashboard'),
     path('payments/return/',                  views.payment_return,    name='payment-return'),
+    path('tickets/<uuid:ticket_id>/mobile-money/', views.mobile_money_checkout, name='ticket-mobile-money'),
+    path('payments/methods/',                 views.payment_methods,   name='payment-methods'),
+    path('payments/mobile-money/webhook/',    views.mobile_money_webhook, name='mobile-money-webhook'),
+    path('payments/mobile-money/return/',     views.mobile_money_return,  name='mobile-money-return'),
     path('stripe/webhook/',                   views.stripe_webhook,    name='stripe-webhook'),
 ]

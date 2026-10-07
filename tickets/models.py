@@ -65,6 +65,9 @@ class Ticket(models.Model):
     # Stripe : seuls des identifiants, jamais de données de carte
     stripe_checkout_session_id = models.CharField(max_length=255, blank=True, default='')
     stripe_payment_intent_id   = models.CharField(max_length=255, blank=True, default='')
+    # Mobile Money (Notch Pay) : référence du paiement et montant réellement débité en FCFA
+    mobile_money_reference     = models.CharField(max_length=64, blank=True, default='', db_index=True)
+    mobile_money_amount        = models.PositiveIntegerField(null=True, blank=True)
 
     dress_code   = models.CharField(max_length=80, blank=True, default='')
     generated_at = models.DateTimeField(null=True, blank=True)

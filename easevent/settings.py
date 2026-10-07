@@ -333,6 +333,11 @@ STRIPE_WEBHOOK_SECRET  = config('STRIPE_WEBHOOK_SECRET', default='')
 # Commission Easevent prélevée sur chaque ticket payant (en %, ex. 3)
 PLATFORM_FEE_PERCENT   = config('PLATFORM_FEE_PERCENT', default=3, cast=float)
 STRIPE_CONNECT_COUNTRY = config('STRIPE_CONNECT_COUNTRY', default='FR')
+# Mobile Money (Orange Money, MTN MoMo — Cameroun) via Notch Pay : facultatif.
+# Clé publique (Authorization) et clé de hachage des webhooks (tableau de bord Notch Pay › Paramètres).
+NOTCHPAY_PUBLIC_KEY    = config('NOTCHPAY_PUBLIC_KEY', default='')
+NOTCHPAY_HASH_KEY      = config('NOTCHPAY_HASH_KEY', default='')
+NOTCHPAY_API           = config('NOTCHPAY_API', default='https://api.notchpay.co')
 # Abonnements : facultatif. Sans ces variables, les prix sont créés automatiquement
 # dans Stripe au premier achat (9,99 €/mois, 99,90 €/an ; Pro 24,99 €/mois, 249,90 €/an).
 STRIPE_PRICE_STANDARD_MONTHLY = config('STRIPE_PRICE_STANDARD_MONTHLY', default='')

@@ -26,7 +26,8 @@ from django.shortcuts import get_object_or_404, render
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 from rest_framework import status
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, throttle_classes
+from rest_framework.throttling import UserRateThrottle
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
@@ -223,6 +224,65 @@ def stripe_webhook(request):
         logger.exception('Webhook Stripe non traité : %s', event.get('type'))
         return HttpResponse(status=500)
     return HttpResponse(status=200)
+
+
+# ─────────────────────────────────────────────────────────────
+# Mobile Money (Orange Money, MTN MoMo) via Notch Pay
+# ─────────────────────────────────────────────────────────────
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def payment_methods(request):
+    from . import mobile_money
+    return Response({'card': bool(stripe_service.settings.STRIPE_SECRET_KEY), 'mobile_money': mobile_money.available()})
+
+
+class MobileMoneyThrottle(UserRateThrottle):
+    scope = 'billing'
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([MobileMoneyThrottle])
+def mobile_money_checkout(request, ticket_id):
+    from . import mobile_money
+    data = request.data if isinstance(request.data, dict) else {}
+    try:
+        return Response(mobile_money.create_payment(_own_ticket(request, ticket_id), request, data.get('phone', '')))
+    except TicketError as exc:
+        return _error(exc)
+
+
+@csrf_exempt
+@require_POST
+def mobile_money_webhook(request):
+    from . import mobile_money
+    if not mobile_money.verify_signature(request.body, request.META.get('HTTP_X_NOTCH_SIGNATURE', '')):
+        logger.warning('Webhook Notch Pay rejeté : signature invalide')
+        return HttpResponse(status=400)
+    try:
+        mobile_money.sync(mobile_money.reference_from_webhook(mobile_money.parse(request.body)))
+    except ValueError:
+        return HttpResponse(status=400)
+    except Exception:
+        return HttpResponse(status=500)              # Notch Pay renverra l'événement
+    return HttpResponse(status=200)
+
+
+def mobile_money_return(request):
+    """Retour de la page Notch Pay : on vérifie l'état (sans attendre le webhook), puis on renvoie vers l'application."""
+    from . import mobile_money
+    ticket = None
+    try:
+        ticket = mobile_money.sync(str(request.GET.get('reference', ''))[:64])
+    except Exception:
+        pass
+    if ticket is not None and ticket.status == Ticket.Status.GENERATED:
+        title, message = 'Paiement reçu', 'Votre billet est prêt dans « Mes invitations ».'
+    elif ticket is not None and ticket.payment_status == Ticket.PaymentStatus.FAILED:
+        title, message = 'Paiement non abouti', 'Votre billet reste en attente : vous pouvez réessayer depuis l’application.'
+    else:
+        title, message = 'Paiement en cours', 'Validez le paiement sur votre téléphone : votre billet apparaît dès la confirmation.'
+    return render(request, 'tickets/return.html', {'title': title, 'message': message, 'deeplink': 'easevent://invitations'})
 
 
 def payment_return(request):

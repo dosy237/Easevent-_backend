@@ -16,6 +16,11 @@ va changer de compte. Au moment de la bascule :
 - [ ] Secrets et cible du workflow GitHub Actions de déploiement.
 - [ ] Stripe : mettre à jour l'URL du webhook (`https://<domaine>/api/stripe/webhook/`)
       et reprendre le nouveau secret `whsec_…`.
+- [ ] Mobile Money (facultatif) : compte marchand Notch Pay, puis `NOTCHPAY_PUBLIC_KEY`,
+      `NOTCHPAY_HASH_KEY` et l'URL du webhook `https://<domaine>/api/payments/mobile-money/webhook/`
+      dans le tableau de bord Notch Pay. Sans ces variables, le choix Mobile Money n'apparaît pas.
+- [ ] Premier compte administrateur : `python manage.py createsuperuser` (accès à l'onglet
+      Administration de l'application ; il peut ensuite nommer d'autres administrateurs).
 - [ ] Application mobile : `EXPO_PUBLIC_API_URL` puis reconstruire l'APK
       (les images viennent du backend : elles suivront automatiquement).
 - [ ] Liens des e-mails (vérification, mot de passe oublié) : vérifier qu'ils pointent
