@@ -41,6 +41,7 @@ class Notification(models.Model):
         PAYMENT_REFUNDED    = 'payment_refunded',    'Remboursement'
         # Compte
         SUBSCRIPTION        = 'subscription',        'Abonnement'
+        MINISITE_READY      = 'minisite_ready',      'Mini-site prêt'
 
     class Category(models.TextChoices):
         EVENTS   = 'events',   'Événements'
@@ -49,6 +50,7 @@ class Notification(models.Model):
         SOCIAL   = 'social',   'Amis'
 
     CATEGORY_OF = {
+        'minisite_ready': 'events',
         'invitation_received': 'events', 'ticket_to_validate': 'events', 'ticket_generated': 'events',
         'daily_summary': 'events', 'reminder': 'events', 'message_received': 'messages',
         'payment_succeeded': 'system', 'payment_failed': 'system',

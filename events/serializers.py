@@ -44,6 +44,8 @@ class EventPublicSerializer(serializers.ModelSerializer):
     online_link        = serializers.SerializerMethodField()
     gallery            = serializers.SerializerMethodField()
 
+    has_minisite = serializers.SerializerMethodField()
+
     class Meta:
         # model : quel modèle Django ce serializer traduit
         model = Event
@@ -88,7 +90,11 @@ class EventPublicSerializer(serializers.ModelSerializer):
             'organizer',           # nom de l'organisateur
             'map',                 # carte du lieu + liens Google Maps (voir, itinéraire)
             'gallery',             # photos de la galerie (URL absolues)
+            'has_minisite',        # un mini-site a été choisi (affiché dans l'application)
         ]
+
+    def get_has_minisite(self, obj):
+        return bool((obj.minisite_config or {}).get('spec'))
 
     def get_date_formatted(self, obj):
         """

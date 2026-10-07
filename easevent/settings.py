@@ -93,6 +93,7 @@ INSTALLED_APPS = [
     'messaging',
     'social',
     'rsvp',
+    'minisite',
     'channels',
 ]
 
@@ -182,6 +183,7 @@ REST_FRAMEWORK = {
         'rsvp':            '120/hour',     # questions RSVP (organisateur) et réponses
         'billing':         '30/hour',      # abonnements : sessions Stripe
         'checkin':         '120/min',      # scanner de tickets à l'entrée
+        'minisite':        '20/hour',      # générations de mini-site (appels aux modèles d'IA)
     },
 }
 
@@ -340,6 +342,34 @@ STRIPE_PRICE_PRO_ANNUAL       = config('STRIPE_PRICE_PRO_ANNUAL', default='')
 PLAN_GUEST_LIMITS = {'free': 50, 'standard': 500, 'pro': None}
 # Événements créés par mois calendaire selon le plan — None = illimité (events/quota.py)
 PLAN_EVENT_LIMITS = {'free': 1, 'standard': None, 'pro': None}
+
+# ─────────────────────────────────────────────────────────────
+# MINI-SITE IA (minisite/) — 6 propositions par génération
+# ─────────────────────────────────────────────────────────────
+# Générations par événement selon le plan — None = illimité
+MINISITE_GENERATION_LIMITS = {'free': 3, 'standard': 15, 'pro': None}
+MINISITE_ASYNC = config('MINISITE_ASYNC', default=True, cast=bool)    # False : génération dans la requête
+MINISITE_AI_TIMEOUT = config('MINISITE_AI_TIMEOUT', default=25, cast=int)
+# Clés gratuites : Google AI Studio, Groq, OpenRouter, Mistral (facultatives)
+GEMINI_API_KEY     = config('GEMINI_API_KEY', default='')
+GROQ_API_KEY       = config('GROQ_API_KEY', default='')
+OPENROUTER_API_KEY = config('OPENROUTER_API_KEY', default='')
+MISTRAL_API_KEY    = config('MISTRAL_API_KEY', default='')
+MINISITE_MODELS = {
+    'gemini':     config('MINISITE_GEMINI_MODEL', default='gemini-flash-latest'),
+    'groq':       config('MINISITE_GROQ_MODEL', default='llama-3.3-70b-versatile'),
+    'openrouter': config('MINISITE_OPENROUTER_MODEL', default='meta-llama/llama-3.3-70b-instruct:free'),
+    'mistral':    config('MINISITE_MISTRAL_MODEL', default='mistral-small-latest'),
+}
+# Ordre de priorité par rôle (Mistral : direction artistique seulement, données non sensibles)
+MINISITE_ROLES = {
+    'direction': ('mistral', 'gemini', 'groq', 'openrouter'),
+    'copy':      ('gemini', 'groq', 'openrouter'),
+    'review':    ('groq', 'openrouter', 'gemini'),
+}
+# Journal d'apprentissage (futur modèle Easevent) : une ligne JSON par génération / choix / retouche
+MINISITE_DATASET_ENABLED = config('MINISITE_DATASET_ENABLED', default=True, cast=bool)
+MINISITE_DATASET_DIR = config('MINISITE_DATASET_DIR', default=str(BASE_DIR / 'data' / 'minisite'))
 INVITE_BATCH_MAX     = 100   # adresses / numéros par envoi
 INVITE_REMIND_DELAY_HOURS = 24  # une relance par invité et par jour au plus
 # ── Cartes et adresses (events/geo.py) ─────────────────────────────────
