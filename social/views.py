@@ -60,8 +60,14 @@ def friends(request):
 @throttle_classes([FriendRequestThrottle])
 def send_request(request):
     from users.models import User
-    target = User.objects.filter(pk=request.data.get('user_id'), is_active=True, is_verified=True,
-                                 deleted_at__isnull=True).first() if request.data.get('user_id') else None
+    import uuid
+    data = request.data if isinstance(request.data, dict) else {}
+    try:
+        target_id = uuid.UUID(str(data.get('user_id')))
+    except (TypeError, ValueError):
+        target_id = None
+    target = User.objects.filter(pk=target_id, is_active=True, is_verified=True,
+                                 deleted_at__isnull=True).first() if target_id else None
     if target is None:
         raise Http404
     try:

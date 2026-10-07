@@ -35,8 +35,17 @@ FRONTEND_URL = config('FRONTEND_URL', default='').rstrip('/')
 
 TESTING = 'test' in sys.argv
 
-# En-tête proxy SSL (obligatoire sur Render)
+# En-tête proxy SSL (nginx transmet X-Forwarded-Proto)
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
+# Formulaires POST des pages web (ex. décliner une invitation sur /i/<jeton>/)
+# derrière HTTPS : l'origine publique doit être déclarée.
+CSRF_TRUSTED_ORIGINS = [o for o in config(
+    'CSRF_TRUSTED_ORIGINS',
+    default=PUBLIC_BASE_URL if PUBLIC_BASE_URL.startswith('https://') else '').split(',') if o]
+
+# Documentation de l'API (Swagger) : seulement en développement, sauf API_DOCS=True
+API_DOCS = config('API_DOCS', default=DEBUG, cast=bool)
 
 # ─────────────────────────────────────────────────────────────
 # CORS
@@ -83,6 +92,7 @@ INSTALLED_APPS = [
     'messaging',
     'social',
     'rsvp',
+    'channels',
 ]
 
 # ─────────────────────────────────────────────────────────────
@@ -169,6 +179,8 @@ REST_FRAMEWORK = {
         'static_map':     '120/min',
         'friend_requests': '50/day',
         'rsvp':            '120/hour',     # questions RSVP (organisateur) et réponses
+        'billing':         '30/hour',      # abonnements : sessions Stripe
+        'checkin':         '120/min',      # scanner de tickets à l'entrée
     },
 }
 
@@ -241,6 +253,23 @@ CELERY_BROKER_TRANSPORT_OPTIONS = {'socket_connect_timeout': 2, 'socket_timeout'
 if TESTING:
     CELERY_TASK_ALWAYS_EAGER = True           # tests : tâches exécutées sur place
 
+# WebSocket (messagerie instantanée, badges) : Django Channels via Redis.
+# Servi par le service « realtime » (daphne easevent.asgi:application) derrière /ws/.
+ASGI_APPLICATION = 'easevent.asgi.application'
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {'hosts': [REDIS_URL], 'capacity': 200, 'expiry': 30},
+    }
+}
+if TESTING:
+    CHANNEL_LAYERS = {'default': {'BACKEND': 'channels.layers.InMemoryChannelLayer'}}
+
+# Notifications push (Expo Push → FCM / APNs). EXPO_ACCESS_TOKEN : seulement si
+# « Enhanced push security » est activé dans le compte Expo.
+PUSH_ENABLED = config('PUSH_ENABLED', default=not TESTING, cast=bool)
+EXPO_ACCESS_TOKEN = config('EXPO_ACCESS_TOKEN', default='')
+
 # ─────────────────────────────────────────────────────────────
 # FICHIERS STATIQUES & MÉDIAS
 # ─────────────────────────────────────────────────────────────
@@ -296,6 +325,12 @@ STRIPE_WEBHOOK_SECRET  = config('STRIPE_WEBHOOK_SECRET', default='')
 # Commission Easevent prélevée sur chaque ticket payant (en %, ex. 3)
 PLATFORM_FEE_PERCENT   = config('PLATFORM_FEE_PERCENT', default=3, cast=float)
 STRIPE_CONNECT_COUNTRY = config('STRIPE_CONNECT_COUNTRY', default='FR')
+# Abonnements : facultatif. Sans ces variables, les prix sont créés automatiquement
+# dans Stripe au premier achat (9,99 €/mois, 99,90 €/an ; Pro 24,99 €/mois, 249,90 €/an).
+STRIPE_PRICE_STANDARD_MONTHLY = config('STRIPE_PRICE_STANDARD_MONTHLY', default='')
+STRIPE_PRICE_STANDARD_ANNUAL  = config('STRIPE_PRICE_STANDARD_ANNUAL', default='')
+STRIPE_PRICE_PRO_MONTHLY      = config('STRIPE_PRICE_PRO_MONTHLY', default='')
+STRIPE_PRICE_PRO_ANNUAL       = config('STRIPE_PRICE_PRO_ANNUAL', default='')
 
 # ─────────────────────────────────────────────────────────────
 # INVITATIONS (M12, M29–M31)

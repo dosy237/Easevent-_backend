@@ -30,6 +30,21 @@ from .models import Conversation, Message
 PAGE = 50
 
 
+def _uuid(value):
+    import uuid
+    try:
+        return uuid.UUID(str(value))
+    except (TypeError, ValueError, AttributeError):
+        return None
+
+
+def _dt(value):
+    try:
+        return parse_datetime(value or '')
+    except (TypeError, ValueError):
+        return None
+
+
 class MessageThrottle(UserRateThrottle):
     scope = 'messages'
 
@@ -124,7 +139,7 @@ def conversations(request):
                               .filter(event__deleted_at__isnull=True), request.user)
     event_id = request.query_params.get('event')
     if event_id:
-        qs = qs.filter(event_id=event_id)
+        qs = qs.filter(event_id=_uuid(event_id)) if _uuid(event_id) else qs.none()
     q = (request.query_params.get('q') or '').strip()[:60]
     if q:
         terms = Q()
@@ -147,18 +162,27 @@ def conversations(request):
 
 def _open(request):
     from users.models import User
-    try:
-        event = Event.objects.select_related('organizer').get(pk=request.data.get('event_id'), deleted_at__isnull=True)
-    except (Event.DoesNotExist, ValueError, TypeError, Exception):
+    data = request.data if isinstance(request.data, dict) else {}
+    event_id = _uuid(data.get('event_id'))
+    event = Event.objects.select_related('organizer').filter(pk=event_id, deleted_at__isnull=True).first() if event_id else None
+    if event is None:
         raise Http404
-    participant_id = request.data.get('participant_id')
+    participant_id = data.get('participant_id')
     if event.organizer_id == request.user.id:
         if not participant_id:
             return Response({'detail': "Choisissez l'invité à contacter.", 'code': 'participant_required'},
                             status=status.HTTP_400_BAD_REQUEST)
-        participant = User.objects.filter(pk=participant_id, is_active=True).first()
+        participant = User.objects.filter(pk=_uuid(participant_id), is_active=True).first() if _uuid(participant_id) else None
         if participant is None:
             raise Http404
+        # L'organisateur n'écrit qu'à ses invités / participants (ou reprend une conversation existante)
+        from tickets.models import Ticket
+        known = (event.invitations.filter(invited_user=participant).exclude(status='revoked').exists()
+                 or Ticket.objects.filter(event=event, user=participant).exists()
+                 or Conversation.objects.filter(event=event, participant=participant).exists())
+        if not known:
+            return Response({'detail': "Vous ne pouvez écrire qu'à vos invités et participants.", 'code': 'forbidden'},
+                            status=status.HTTP_403_FORBIDDEN)
     else:
         participant = request.user          # un invité ne peut ouvrir que sa propre conversation
     try:
@@ -216,8 +240,8 @@ def messages(request, conversation_id):
         return Response(_message(msg, request.user, None, request), status=status.HTTP_201_CREATED)
 
     qs = conv.messages.all()
-    after = parse_datetime(request.query_params.get('after') or '')
-    before = parse_datetime(request.query_params.get('before') or '')
+    after = _dt(request.query_params.get('after'))
+    before = _dt(request.query_params.get('before'))
     if after:
         items = list(qs.filter(created_at__gt=after).order_by('created_at')[:PAGE])
         has_more = False
@@ -245,6 +269,8 @@ def messages(request, conversation_id):
 def typing(request, conversation_id):
     conv = _own(request, conversation_id)
     services.set_typing(conv, conv.side(request.user))
+    from .realtime import broadcast_typing
+    broadcast_typing(conv, conv.side(request.user))
     return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -253,8 +279,11 @@ def attachment(request, token):
     from pathlib import Path
     from django.conf import settings
     try:
-        msg = Message.objects.get(pk=signing.loads(token, salt=ATTACHMENT_SALT, max_age=ATTACHMENT_TTL), kind='image')
+        msg = Message.objects.select_related('conversation__event').get(
+            pk=signing.loads(token, salt=ATTACHMENT_SALT, max_age=ATTACHMENT_TTL), kind='image')
     except (signing.BadSignature, Message.DoesNotExist, ValueError):
+        raise Http404
+    if msg.conversation.event.deleted_at is not None:
         raise Http404
     path = Path(settings.PRIVATE_MEDIA_ROOT) / msg.attachment
     if not path.is_file():

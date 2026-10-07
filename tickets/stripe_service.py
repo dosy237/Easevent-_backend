@@ -74,9 +74,16 @@ def sync_account(user, account=None):
     if account is None:
         _configure()
         account = _plain(stripe.Account.retrieve(user.stripe_account_id))
+    was_enabled = user.stripe_charges_enabled
     user.stripe_charges_enabled = bool(account.get('charges_enabled'))
     user.stripe_payouts_enabled = bool(account.get('payouts_enabled'))
     user.save(update_fields=['stripe_charges_enabled', 'stripe_payouts_enabled', 'updated_at'])
+    if user.stripe_charges_enabled and not was_enabled:
+        from notifications.models import Notification
+        from notifications.services import notify
+        notify(user, Notification.Type.PAYOUTS_READY, 'Paiements activés',
+               'Vous pouvez maintenant vendre des tickets : l’argent est versé sur votre compte bancaire.',
+               dedupe_key=f'payouts-ready:{user.stripe_account_id}')
     return user
 
 
@@ -118,6 +125,8 @@ def create_checkout(ticket, request):
     """Session Stripe Checkout pour un ticket en attente (destination charge)."""
     if ticket.status != Ticket.Status.PENDING:
         raise TicketError("Ce ticket n'est plus en attente de paiement.", 'not_pending')
+    from .services import ensure_still_accessible
+    ensure_still_accessible(ticket)
     if ticket.is_free:
         raise TicketError('Ce ticket est gratuit : validez-le directement.', 'free_ticket')
     if ticket.payment_status == Ticket.PaymentStatus.PROCESSING:
@@ -186,10 +195,54 @@ def parse_webhook(payload, signature):
 
 
 def _ticket_from_session(session):
+    import uuid
     ticket_id = (session.get('metadata') or {}).get('ticket_id') or session.get('client_reference_id')
-    if not ticket_id:
+    try:
+        ticket_id = uuid.UUID(str(ticket_id))
+    except ValueError:
         return None
     return Ticket.objects.select_related('event').filter(pk=ticket_id).first()
+
+
+def refund_ticket(ticket, reason='requested_by_customer'):
+    """
+    Rembourse un ticket payé (annulation de l'événement, invitation retirée).
+    Charge de destination : le virement à l'organisateur et la commission
+    Easevent sont repris, le participant est remboursé intégralement.
+    Retourne True si le remboursement est fait (ou déjà fait).
+    """
+    from notifications.models import Notification
+    from notifications.services import notify
+    if ticket.payment_status == Ticket.PaymentStatus.REFUNDED:
+        return True
+    if not ticket.stripe_payment_intent_id:
+        logger.error('Remboursement impossible : ticket %s sans paiement Stripe', ticket.id)
+        return False
+    try:
+        _configure()
+        stripe.Refund.create(
+            payment_intent=ticket.stripe_payment_intent_id,
+            reverse_transfer=True, refund_application_fee=True,
+            metadata={'ticket_id': str(ticket.id), 'reason': reason},
+            idempotency_key=f'refund-{ticket.id}',
+        )
+    except Exception:
+        logger.exception('Remboursement Stripe échoué pour le ticket %s', ticket.id)
+        return False
+    Ticket.objects.filter(pk=ticket.pk).update(payment_status=Ticket.PaymentStatus.REFUNDED)
+    notify(ticket.user, Notification.Type.PAYMENT_REFUNDED, 'Remboursement en cours',
+           f'{ticket.price} {ticket.currency} pour {ticket.event.title}. Il apparaît sur votre compte sous 5 à 10 jours.',
+           event=ticket.event, ticket=ticket, dedupe_key=f'refund:{ticket.id}')
+    return True
+
+
+def _notify_paid(ticket):
+    """Paiement reçu : le participant (reçu) et l'organisateur (vente)."""
+    from notifications.models import Notification
+    from notifications.services import notify
+    notify(ticket.user, Notification.Type.PAYMENT_SUCCEEDED, 'Paiement reçu',
+           f'{ticket.price} {ticket.currency} pour {ticket.event.title}. Votre ticket est prêt.',
+           event=ticket.event, ticket=ticket, dedupe_key=f'paid:{ticket.id}')
 
 
 def _notify_payment_failed(ticket):
@@ -205,6 +258,11 @@ def handle_event(event):
     kind = event['type']
     obj = event['data']['object']
 
+    if kind.startswith('checkout.session.') and obj.get('mode') == 'subscription':
+        from subscriptions.services import handle_stripe_event
+        handle_stripe_event(kind, obj)
+        return
+
     if kind in ('checkout.session.completed', 'checkout.session.async_payment_succeeded',
                 'checkout.session.async_payment_failed', 'checkout.session.expired'):
         ticket = _ticket_from_session(obj)
@@ -217,7 +275,14 @@ def handle_event(event):
 
         paid_now = kind == 'checkout.session.completed' and obj.get('payment_status') == 'paid'
         if paid_now or kind == 'checkout.session.async_payment_succeeded':
+            if ticket.status not in (Ticket.Status.PENDING, Ticket.Status.GENERATED):
+                # Payé après l'annulation de l'événement / du ticket : on rembourse
+                Ticket.objects.filter(pk=ticket.pk).update(payment_status=Ticket.PaymentStatus.PAID)
+                ticket.payment_status = Ticket.PaymentStatus.PAID
+                refund_ticket(ticket, 'cancelled_before_payment')
+                return
             generate_ticket(ticket, Ticket.PaymentStatus.PAID)
+            _notify_paid(ticket)
         elif kind == 'checkout.session.completed':
             # Prélèvement SEPA / virement : confirmation dans quelques jours
             Ticket.objects.filter(pk=ticket.pk, status=Ticket.Status.PENDING).update(
@@ -238,7 +303,19 @@ def handle_event(event):
             sync_account(user, obj)
 
     elif kind == 'charge.refunded':
+        # Remboursement fait depuis le tableau de bord Stripe par l'organisateur / Easevent
         intent = obj.get('payment_intent')
         if intent:
-            Ticket.objects.filter(stripe_payment_intent_id=intent).update(
-                payment_status=Ticket.PaymentStatus.REFUNDED, status=Ticket.Status.CANCELLED)
+            for ticket in Ticket.objects.select_related('event', 'user').filter(stripe_payment_intent_id=intent) \
+                    .exclude(payment_status=Ticket.PaymentStatus.REFUNDED):
+                Ticket.objects.filter(pk=ticket.pk).update(
+                    payment_status=Ticket.PaymentStatus.REFUNDED, status=Ticket.Status.CANCELLED)
+                from notifications.models import Notification
+                from notifications.services import notify
+                notify(ticket.user, Notification.Type.PAYMENT_REFUNDED, 'Ticket remboursé',
+                       f'pour {ticket.event.title}. Le montant apparaît sur votre compte sous 5 à 10 jours.',
+                       event=ticket.event, ticket=ticket, dedupe_key=f'refund:{ticket.id}')
+
+    elif kind.startswith('customer.subscription.') or kind.startswith('invoice.'):
+        from subscriptions.services import handle_stripe_event
+        handle_stripe_event(kind, obj)

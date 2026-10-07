@@ -273,3 +273,45 @@ class TicketPdfTest(TestCase):
         from tickets.stripe_service import platform_fee
         self.assertEqual(settings.PLATFORM_FEE_PERCENT, 3)
         self.assertEqual(platform_fee(2500), 75)
+
+
+class CheckInTest(TestCase):
+    """Scanner de l'organisateur : QR signé ou numéro, une seule entrée par ticket."""
+
+    def setUp(self):
+        cache.clear()
+        self.orga = User.objects.create_user(email='o@x.fr', password='x', first_name='Léa', last_name='O')
+        self.guest = User.objects.create_user(email='g@x.fr', password='x', first_name='Sarah', last_name='M')
+        start = timezone.now() + timedelta(hours=1)
+        common = dict(organizer=self.orga, event_type='soiree', start_date=start, end_date=start + timedelta(hours=5),
+                      status='published', visibility='public')
+        self.event = Event.objects.create(title='Soirée', **common)
+        self.other = Event.objects.create(title='Autre', **common)
+        self.ticket = Ticket.objects.create(event=self.event, user=self.guest, status='generated', price='0')
+        self.client = APIClient()
+        auth(self.client, self.orga)
+        self.url = f'/api/events/{self.event.id}/check-in/'
+
+    def scan(self, code):
+        return self.client.post(self.url, {'code': code}, format='json').data
+
+    def test_entree_unique(self):
+        r = self.scan(self.ticket.qr_payload)
+        self.assertEqual((r['result'], r['participant']['name']), ('ok', 'Sarah M'))
+        self.assertEqual(r['counts'], {'checked_in': 1, 'total': 1})
+        self.assertEqual(self.scan(self.ticket.qr_payload)['result'], 'already')
+        self.assertEqual(self.client.get(self.url).data['recent'][0]['number'], self.ticket.number)
+
+    def test_numero_saisi_et_codes_refuses(self):
+        self.assertEqual(self.scan(self.ticket.number.lower())['result'], 'ok')
+        self.assertEqual(self.scan('faux.qr')['result'], 'invalid')
+        self.assertEqual(self.scan('')['result'], 'invalid')
+        other = Ticket.objects.create(event=self.other, user=self.guest, status='generated', price='0')
+        self.assertEqual(self.scan(other.qr_payload)['result'], 'wrong_event')
+        pending = Ticket.objects.create(event=self.other, user=self.orga, status='pending', price='5')
+        self.assertEqual(self.client.post(f'/api/events/{self.other.id}/check-in/', {'code': pending.qr_payload},
+                                          format='json').data['result'], 'not_valid')
+
+    def test_seul_l_organisateur_scanne(self):
+        auth(self.client, self.guest)
+        self.assertEqual(self.client.post(self.url, {'code': self.ticket.qr_payload}, format='json').status_code, 404)

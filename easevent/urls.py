@@ -19,6 +19,7 @@ urlpatterns = [
 
     # API Events — /api/events/publics/
     path('api/events/', include('events.urls')),
+    path('api/subscriptions/', include('subscriptions.urls')),
     path('api/auth/',   include('users.urls')),
     path('api/invitations/', include('invitations.urls')),
     path('api/', include('tickets.urls')),
@@ -41,11 +42,15 @@ urlpatterns = [
     path('.well-known/assetlinks.json', invitation_pages.assetlinks, name='assetlinks'),
     path('.well-known/apple-app-site-association', invitation_pages.apple_app_site_association, name='aasa'),
 
-    # Swagger / OpenAPI documentation
-    path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
-    path('api/docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
-    path('api/schema/redoc/', SpectacularRedocView.as_view(url_name='schema'), name='redoc'),
 ]
+
+# Swagger / OpenAPI : pas exposé en production (carte de l'API pour un attaquant)
+if settings.API_DOCS:
+    urlpatterns += [
+        path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
+        path('api/docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
+        path('api/schema/redoc/', SpectacularRedocView.as_view(url_name='schema'), name='redoc'),
+    ]
 
 # Photos des événements (/media/...) servies par Django quand nginx ne le
 # fait pas : l'application mobile charge toutes ses images depuis le serveur.

@@ -119,8 +119,21 @@ def _after_send(conv, sender, preview, now):
         existing.body, existing.created_at, existing.actor = text, now, sender
         existing.save(update_fields=['body', 'created_at', 'actor'])
     else:
+        # notify() pousse déjà la première notification de la conversation
         notify(recipient, Notification.Type.MESSAGE_RECEIVED, 'Nouveau message', text, actor=sender,
                event=conv.event, data={'conversation_id': str(conv.id)})
+    if existing:
+        # Chaque nouveau message sonne sur le téléphone, comme une messagerie classique
+        from notifications.push import push_to_user
+        push_to_user(recipient, 'message_received', sender.full_name or 'Nouveau message', preview,
+                     data={'conversation_id': str(conv.id), 'event_id': str(conv.event_id)}, thread=f'conv:{conv.id}')
+
+
+
+def _broadcast(conv, msg):
+    # Temps réel : les deux côtés reçoivent le message tout de suite (WebSocket)
+    from .realtime import broadcast_message
+    broadcast_message(conv, msg)
 
 
 def send(conv, sender, body):
@@ -132,6 +145,7 @@ def send(conv, sender, body):
     now = timezone.now()
     msg = Message.objects.create(conversation=conv, sender=sender, body=body, created_at=now)
     _after_send(conv, sender, body, now)
+    _broadcast(conv, msg)
     return msg
 
 
@@ -172,6 +186,7 @@ def send_image(conv, sender, upload, caption=''):
     msg = Message.objects.create(conversation=conv, sender=sender, kind=Message.Kind.IMAGE, body=caption,
                                  attachment=rel, meta={'width': img.width, 'height': img.height}, created_at=now)
     _after_send(conv, sender, caption or 'Photo', now)
+    _broadcast(conv, msg)
     return msg
 
 
@@ -190,6 +205,7 @@ def send_location(conv, sender):
               **maps_links(event.location_address, lat, lng)},
     )
     _after_send(conv, sender, f'Itinéraire : {event.location_address}', now)
+    _broadcast(conv, msg)
     return msg
 
 
@@ -199,6 +215,11 @@ def mark_seen(conv, side, read=True):
     if read:
         fields[f'{side}_read_at'] = now
     Conversation.objects.filter(pk=conv.pk).update(**fields)
+    if read:
+        # Accusé de lecture instantané chez l'interlocuteur, badges à jour chez soi
+        from .realtime import broadcast_badge, broadcast_read
+        broadcast_read(conv, side, now)
+        broadcast_badge(conv.organizer_id if side == 'organizer' else conv.participant_id)
     if read:
         from notifications.models import Notification
         recipient = conv.organizer_id if side == 'organizer' else conv.participant_id
@@ -223,7 +244,7 @@ def with_unread(queryset, user):
 
 def unread_total(user):
     total = 0
-    for conv in with_unread(Conversation.objects.all(), user):
+    for conv in with_unread(Conversation.objects.filter(event__deleted_at__isnull=True), user):
         total += conv.org_unread if conv.organizer_id == user.id else conv.part_unread
     return total
 

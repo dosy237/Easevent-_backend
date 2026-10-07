@@ -69,7 +69,11 @@ def invite(request, event_id):
     Compatibilité : { email } ou { phone_number } (un seul invité).
     """
     event = _own_event(request, event_id)
-    data = request.data
+    data = request.data if isinstance(request.data, dict) else {}
+    if event.status != 'published':
+        # Une invitation ouvre l'événement à l'invité : il doit être publié (public ou privé)
+        return Response({'detail': "Publiez l'événement avant d'inviter : vos invités pourront alors l'ouvrir.",
+                         'code': 'event_not_published'}, status=status.HTTP_409_CONFLICT)
 
     def as_list(key):
         value = data.get(key)
@@ -148,6 +152,7 @@ def _guest_rows(event):
             'delivery_status': inv.delivery_status,
             'ticket_status':   ticket.status if ticket else None,
             'payment_status':  ticket.payment_status if ticket else None,
+            'checked_in_at':   ticket.checked_in_at.isoformat() if ticket and ticket.checked_in_at else None,
             'sent_at':         inv.sent_at.isoformat() if inv.sent_at else None,
             'opened_at':       inv.opened_at.isoformat() if inv.opened_at else None,
             'responded_at':    inv.responded_at.isoformat() if inv.responded_at else None,
@@ -253,6 +258,8 @@ def export_csv(request, token):
             id=data['e'], organizer_id=data['u'], deleted_at__isnull=True)
     except (signing.BadSignature, KeyError, Event.DoesNotExist):
         raise Http404
+    if event.organizer.subscription_plan not in EXPORT_PLANS:
+        raise Http404                        # abonnement arrêté depuis la création du lien
     rows, _ = _guest_rows(event)
     buf = io.StringIO()
     writer = csv.writer(buf, delimiter=';')

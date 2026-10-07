@@ -68,6 +68,8 @@ class Ticket(models.Model):
 
     dress_code   = models.CharField(max_length=80, blank=True, default='')
     generated_at = models.DateTimeField(null=True, blank=True)
+    # Contrôle à l'entrée (scanner de l'organisateur)
+    checked_in_at = models.DateTimeField(null=True, blank=True)
     created_at   = models.DateTimeField(auto_now_add=True)
     updated_at   = models.DateTimeField(auto_now=True)
 

@@ -44,6 +44,9 @@ def _state_error(inv):
         return ('Invitation annulée', "L'organisateur a annulé cette invitation.", 'revoked')
     if inv.status == 'expired' or inv.expires_at <= timezone.now():
         return ('Invitation expirée', "Cet événement est terminé : l'invitation n'est plus valable.", 'expired')
+    if inv.event.status != 'published':
+        return ('Invitation pas encore disponible',
+                "L'organisateur prépare encore cet événement. Réessayez un peu plus tard.", 'not_published')
     return None
 
 
@@ -65,6 +68,12 @@ def _decline(inv):
                 pass
         inv.status, inv.responded_at = 'declined', timezone.now()
         inv.save(update_fields=['status', 'responded_at', 'updated_at'])
+    # Organisateur prévenu (réponses groupées), et fil de la conversation pour un membre
+    from notifications.services import notify_guest_activity
+    notify_guest_activity(inv.event, inv.invited_user, 'declined', name=inv.contact_name or inv.email or None)
+    if inv.invited_user_id:
+        from messaging.services import record_invitation_event
+        record_invitation_event(inv, 'invitation_declined')
 
 
 def _payload(inv, request):

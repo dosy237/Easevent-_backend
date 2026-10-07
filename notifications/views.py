@@ -61,9 +61,18 @@ def _friendship(n):
     return {'id': str(f.id), 'status': f.status, 'can_answer': f.status == 'pending'} if f else {'status': 'gone', 'can_answer': False}
 
 
+# Notifications liées à un événement annulé : seules celles qui l'annoncent restent visibles
+KEPT_AFTER_CANCEL = ('event_cancelled', 'payment_refunded', 'invitation_revoked')
+
+
+def visible(qs):
+    from django.db.models import Q
+    return qs.filter(Q(event__isnull=True) | Q(event__deleted_at__isnull=True) | Q(type__in=KEPT_AFTER_CANCEL))
+
+
 def _unread(user):
     counts = {c: 0 for c in CATEGORIES}
-    for row in (Notification.objects.filter(user=user, read_at__isnull=True)
+    for row in (visible(Notification.objects.filter(user=user, read_at__isnull=True))
                 .values_list('category', flat=True)):
         counts[row] = counts.get(row, 0) + 1
     counts['all'] = sum(counts[c] for c in CATEGORIES)
@@ -74,12 +83,15 @@ def _unread(user):
 @permission_classes([IsAuthenticated])
 def list_notifications(request):
     refresh_scheduled(request.user)
-    qs = (Notification.objects.filter(user=request.user)
+    qs = (visible(Notification.objects.filter(user=request.user))
           .select_related('actor', 'event', 'invitation'))
     category = request.query_params.get('category', 'all')
     if category in CATEGORIES:
         qs = qs.filter(category=category)
-    before = parse_datetime(request.query_params.get('before') or '')
+    try:
+        before = parse_datetime(request.query_params.get('before') or '')
+    except (TypeError, ValueError):
+        before = None
     if before:
         qs = qs.filter(created_at__lt=before)
     items = list(qs[:PAGE_SIZE + 1])
@@ -134,3 +146,30 @@ def preferences(request):
         user.notification_prefs = prefs
         user.save(update_fields=['notification_prefs', 'updated_at'])
     return Response(prefs_of(user))
+
+
+# ─────────────────────────────────────────────────────────────
+# Appareils (notifications push)
+#   POST   /api/notifications/devices/  { token, platform }   enregistre le téléphone
+#   DELETE /api/notifications/devices/  { token }             à la déconnexion
+# ─────────────────────────────────────────────────────────────
+import re as _re
+
+_EXPO_TOKEN = _re.compile(r'^(ExponentPushToken|ExpoPushToken)\[[A-Za-z0-9_\-]{10,200}\]$')
+
+
+@api_view(['POST', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def devices(request):
+    from .models import DeviceToken
+    data = request.data if isinstance(request.data, dict) else {}
+    token = str(data.get('token') or '').strip()
+    if not _EXPO_TOKEN.match(token):
+        return Response({'detail': 'Jeton de notification invalide.'}, status=status.HTTP_400_BAD_REQUEST)
+    if request.method == 'DELETE':
+        DeviceToken.objects.filter(token=token, user=request.user).delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+    platform = str(data.get('platform') or '')[:10]
+    # Un même téléphone peut changer de compte : le jeton suit le compte connecté
+    DeviceToken.objects.update_or_create(token=token, defaults={'user': request.user, 'platform': platform})
+    return Response({'registered': True}, status=status.HTTP_201_CREATED)

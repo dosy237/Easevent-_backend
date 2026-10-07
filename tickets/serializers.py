@@ -15,7 +15,7 @@ class TicketSerializer(serializers.ModelSerializer):
         model  = Ticket
         fields = [
             'id', 'number', 'status', 'payment_status', 'price', 'currency',
-            'dress_code', 'generated_at', 'created_at', 'invitation_id',
+            'dress_code', 'generated_at', 'checked_in_at', 'created_at', 'invitation_id',
             'event', 'participant', 'qr_payload',
         ]
 

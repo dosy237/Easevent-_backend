@@ -103,7 +103,7 @@ class NotificationFlowTest(TestCase):
 
     def test_preferences(self):
         auth(self.client, self.guest)
-        self.assertEqual(self.client.get('/api/notifications/preferences/').data, {'reminders': True, 'daily_summary': True})
+        self.assertEqual(self.client.get('/api/notifications/preferences/').data, {'reminders': True, 'daily_summary': True, 'push': True, 'messages': True, 'guest_responses': True})
         r = self.client.patch('/api/notifications/preferences/', {'reminders': False}, format='json')
         self.assertFalse(r.data['reminders'])
         self.assertEqual(self.client.patch('/api/notifications/preferences/', {'reminders': 'non'}, format='json').status_code, 400)

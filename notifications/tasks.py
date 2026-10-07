@@ -20,6 +20,12 @@ from django.utils import timezone
 logger = logging.getLogger(__name__)
 
 
+@shared_task(name='notifications.send_push', ignore_result=True)
+def send_push(user_id, title, body, data, thread=None):
+    from .push import deliver
+    return deliver(user_id, title, body, data, thread)
+
+
 def _send_reminder_email(notification):
     from easevent.media import public_url
     from invitations.services import fr_datetime

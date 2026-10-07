@@ -24,6 +24,8 @@ def mes_invitations(request):
     invitations = Invitation.objects.filter(
         invited_user = request.user,
         expires_at__gt = timezone.now(),   # non expirées
+        event__deleted_at__isnull = True,  # événement annulé : plus listé
+        event__status = 'published',       # dépublié : masqué jusqu'à la republication
     ).exclude(
         status__in = ['revoked', 'expired']
     ).select_related('event').order_by('-sent_at')
@@ -67,6 +69,11 @@ def repondre_invitation(request, invitation_id):
     from tickets.models import Ticket
     from tickets.services import TicketError, cancel_ticket, create_pending_ticket
 
+    from tickets.services import can_access_event
+    if invitation.event.deleted_at is not None or not can_access_event(invitation.event, request.user):
+        return Response({'detail': "Cet événement n'est plus accessible.", 'code': 'event_unavailable'},
+                        status=status.HTTP_410_GONE)
+
     ticket = None
     if new_status == 'confirmed':
         # Questions RSVP (M19) : réponses envoyées avec l'acceptation, obligatoires vérifiées
@@ -94,6 +101,10 @@ def repondre_invitation(request, invitation_id):
     # Fil de la conversation avec l'organisateur (M15 / M16)
     from messaging.services import record_invitation_event
     record_invitation_event(invitation, 'invitation_accepted' if new_status == 'confirmed' else 'invitation_declined')
+
+    # Organisateur : « Claire a accepté votre invitation » (notification groupée + push)
+    from notifications.services import notify_guest_activity
+    notify_guest_activity(invitation.event, request.user, 'accepted' if new_status == 'confirmed' else 'declined')
 
     if ticket is not None and ticket.status == Ticket.Status.PENDING:
         from notifications.models import Notification

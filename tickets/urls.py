@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import views
+from . import checkin, views
 
 urlpatterns = [
     path('tickets/mine/',                     views.my_tickets,        name='tickets-mine'),
@@ -12,6 +12,7 @@ urlpatterns = [
     path('tickets/<uuid:ticket_id>/pdf-link/', views.ticket_pdf_link,  name='ticket-pdf-link'),
     path('tickets/pdf/<str:token>/',          views.ticket_pdf,        name='ticket-pdf'),
     path('events/<uuid:event_id>/tickets/',   views.take_ticket,       name='event-take-ticket'),
+    path('events/<uuid:event_id>/check-in/',  checkin.check_in,        name='event-check-in'),
     path('payments/connect/status/',          views.connect_status,    name='connect-status'),
     path('payments/connect/onboard/',         views.connect_onboard,   name='connect-onboard'),
     path('payments/connect/dashboard/',       views.connect_dashboard, name='connect-dashboard'),

@@ -41,6 +41,8 @@ class EventPublicSerializer(serializers.ModelSerializer):
     my_ticket          = serializers.SerializerMethodField()
     organizer          = serializers.SerializerMethodField()
     map                = serializers.SerializerMethodField()
+    online_link        = serializers.SerializerMethodField()
+    gallery            = serializers.SerializerMethodField()
 
     class Meta:
         # model : quel modèle Django ce serializer traduit
@@ -85,6 +87,7 @@ class EventPublicSerializer(serializers.ModelSerializer):
             'my_ticket',           # ticket actif de l'utilisateur connecté (détail)
             'organizer',           # nom de l'organisateur
             'map',                 # carte du lieu + liens Google Maps (voir, itinéraire)
+            'gallery',             # photos de la galerie (URL absolues)
         ]
 
     def get_date_formatted(self, obj):
@@ -169,6 +172,30 @@ class EventPublicSerializer(serializers.ModelSerializer):
         if not ticket:
             return None
         return {'id': str(ticket.id), 'status': ticket.status, 'payment_status': ticket.payment_status}
+
+    def get_online_link(self, obj):
+        """
+        Le lien de connexion d'un événement en ligne n'est donné qu'à
+        l'organisateur et aux participants qui ont un ticket généré : sinon
+        un événement payant serait accessible sans payer.
+        """
+        if not obj.is_online or not obj.online_link:
+            return None
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        if not user or not user.is_authenticated:
+            return None
+        if obj.organizer_id == user.id:
+            return obj.online_link
+        from tickets.models import Ticket
+        has_ticket = Ticket.objects.filter(event=obj, user=user, status=Ticket.Status.GENERATED).exists()
+        return obj.online_link if has_ticket else None
+
+    def get_gallery(self, obj):
+        from easevent.media import public_url
+        items = (obj.template_config or {}).get('gallery') or []
+        request = self.context.get('request')
+        return [public_url(u, request) for u in items if isinstance(u, str) and u][:6]
 
     def get_map(self, obj):
         from .geo import maps_links, static_map_url

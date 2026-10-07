@@ -30,6 +30,17 @@ class Notification(models.Model):
         PAYMENT_FAILED      = 'payment_failed',      'Paiement échoué'
         FRIEND_REQUEST      = 'friend_request',      "Demande d'ami"
         FRIEND_ACCEPTED     = 'friend_accepted',     'Demande acceptée'
+        # Organisateur
+        GUEST_RESPONSE      = 'guest_response',      'Réponse d\'un invité'
+        EVENT_FULL          = 'event_full',          'Événement complet'
+        PAYOUTS_READY       = 'payouts_ready',       'Paiements activés'
+        # Participant
+        EVENT_UPDATED       = 'event_updated',       'Événement modifié'
+        EVENT_CANCELLED     = 'event_cancelled',     'Événement annulé'
+        INVITATION_REVOKED  = 'invitation_revoked',  'Invitation retirée'
+        PAYMENT_REFUNDED    = 'payment_refunded',    'Remboursement'
+        # Compte
+        SUBSCRIPTION        = 'subscription',        'Abonnement'
 
     class Category(models.TextChoices):
         EVENTS   = 'events',   'Événements'
@@ -42,6 +53,9 @@ class Notification(models.Model):
         'daily_summary': 'events', 'reminder': 'events', 'message_received': 'messages',
         'payment_succeeded': 'system', 'payment_failed': 'system',
         'friend_request': 'social', 'friend_accepted': 'social',
+        'guest_response': 'events', 'event_full': 'events', 'event_updated': 'events',
+        'event_cancelled': 'events', 'invitation_revoked': 'events',
+        'payouts_ready': 'system', 'payment_refunded': 'system', 'subscription': 'system',
     }
 
     id         = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -73,3 +87,23 @@ class Notification(models.Model):
 
     def __str__(self):
         return f'{self.type} → {self.user_id}'
+
+
+class DeviceToken(models.Model):
+    """
+    Jeton de notification push d'un appareil (Expo Push → FCM / APNs).
+    Un jeton appartient à un seul compte : à la connexion d'un autre compte
+    sur le même téléphone, il est réattribué.
+    """
+    id         = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user       = models.ForeignKey('users.User', on_delete=models.CASCADE, related_name='device_tokens')
+    token      = models.CharField(max_length=255, unique=True)
+    platform   = models.CharField(max_length=10, blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_seen  = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'device_tokens'
+
+    def __str__(self):
+        return f'{self.platform} → {self.user_id}'

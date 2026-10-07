@@ -81,6 +81,7 @@ def ticket_counts(request):
     )
     counts['invitations_to_answer'] = Invitation.objects.filter(
         invited_user=request.user, status__in=['sent', 'opened'], expires_at__gt=timezone.now(),
+        event__deleted_at__isnull=True, event__status='published',
     ).count()
     counts['badge'] = counts['pending'] + counts['invitations_to_answer']
     return Response(counts)
@@ -209,13 +210,18 @@ def stripe_webhook(request):
         event = stripe_service.parse_webhook(request.body, request.META.get('HTTP_STRIPE_SIGNATURE', ''))
     except stripe_service.PaymentsUnavailable:
         return HttpResponse(status=503)
-    except Exception:
+    except Exception as exc:
         # Signature invalide ou charge illisible : requête rejetée
+        logger.warning('Webhook Stripe rejeté : %s', type(exc).__name__)
         return HttpResponse(status=400)
     try:
         stripe_service.handle_event(event)
     except TicketError as exc:
         logger.warning('Webhook Stripe : %s', exc.message)
+    except Exception:
+        # Stripe renverra l'événement plus tard (nouvelle tentative automatique)
+        logger.exception('Webhook Stripe non traité : %s', event.get('type'))
+        return HttpResponse(status=500)
     return HttpResponse(status=200)
 
 
@@ -228,6 +234,9 @@ def payment_return(request):
         ('ticket', 'cancel'):   ('Paiement interrompu', 'Votre ticket reste dans « Mes tickets › En attente ». Vous pourrez payer plus tard.', 'easevent://tickets'),
         ('connect', 'done'):    ('Informations enregistrées', 'Retournez dans Easevent pour voir l’état de vos paiements.', 'easevent://profil/paiements'),
         ('connect', 'refresh'): ('Lien expiré', 'Relancez l’activation des paiements depuis votre profil Easevent.', 'easevent://profil/paiements'),
+        ('subscription', 'success'): ('Abonnement activé', 'Merci ! Retournez dans Easevent : vos nouvelles fonctionnalités sont prêtes.', 'easevent://profil/abonnement/succes'),
+        ('subscription', 'cancel'):  ('Paiement interrompu', 'Aucun montant n’a été prélevé. Vous pouvez choisir un plan à tout moment.', 'easevent://profil/plans'),
+        ('subscription', 'portal'):  ('Modifications enregistrées', 'Retournez dans Easevent pour voir votre abonnement.', 'easevent://profil/plans'),
     }
     title, message, deeplink = pages.get((flow, state), ('Easevent', 'Retournez dans l’application.', 'easevent://'))
     return render(request, 'tickets/return.html', {'title': title, 'message': message, 'deeplink': deeplink})
