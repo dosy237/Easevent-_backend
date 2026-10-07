@@ -307,6 +307,32 @@ class TicketingFieldsTest(TestCase):
         r = self.client.patch(f'/api/events/{event_id}/update/', {'is_paid': False}, format='json')
         self.assertEqual(r.data['event']['price'], '0.00')
 
+    def test_passer_public_prive_et_inverse(self):
+        event_id = self._create(template_config={'gallery': ['a.jpg']}).data['event']['id']
+        self.client.post(f'/api/events/{event_id}/publish/', {}, format='json')
+        r = self.client.patch(f'/api/events/{event_id}/update/', {'visibility': 'private'}, format='json')
+        self.assertEqual(r.data['event']['visibility'], 'private')
+        self.assertEqual(r.data['event']['status'], 'published')       # reste publié
+        in_feed = lambda: any(str(e['id']) == event_id for e in self.client.get('/api/events/publics/').data['events'])
+        self.assertFalse(in_feed())
+        r = self.client.patch(f'/api/events/{event_id}/update/', {'visibility': 'public'}, format='json')
+        self.assertEqual(r.data['event']['visibility'], 'public')
+        self.assertTrue(in_feed())
+        detail = self.client.get(f'/api/events/{event_id}/detail/').data['event']
+        self.assertEqual(detail['template_config']['gallery'], ['a.jpg'])
+
+    def test_titre_vide_et_visibilite_invalide_refuses(self):
+        event_id = self._create().data['event']['id']
+        self.assertEqual(self.client.patch(f'/api/events/{event_id}/update/', {'title': '  '}, format='json').status_code, 400)
+        self.assertEqual(self.client.post(f'/api/events/{event_id}/publish/', {'visibility': 'secret'}, format='json').status_code, 400)
+
+    def test_seul_l_organisateur_modifie(self):
+        event_id = self._create().data['event']['id']
+        other = User.objects.create_user(email='autre@easevent.fr', password='x', first_name='A', last_name='B')
+        c = APIClient()
+        c.credentials(HTTP_AUTHORIZATION=f'Bearer {RefreshToken.for_user(other).access_token}')
+        self.assertEqual(c.patch(f'/api/events/{event_id}/update/', {'visibility': 'private'}, format='json').status_code, 404)
+
 
 class StyleFieldsTest(TicketingFieldsTest):
     """Type libre (« Autre ») et palette de couleurs libre."""

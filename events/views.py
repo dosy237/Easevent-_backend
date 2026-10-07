@@ -392,7 +392,8 @@ def detail_evenement_organisateur(request, event_id):
 
     serializer = EventPublicSerializer(event, context={'request': request})
     return Response({
-        'event':       serializer.data,
+        # template_config (galerie…) : réservé à l'organisateur, pour l'écran « Modifier »
+        'event':       {**serializer.data, 'template_config': event.template_config or {}},
         'invitations': invitations_count,
     })
 
@@ -424,7 +425,11 @@ def modifier_evenement(request, event_id):
     data = request.data
 
     # Mise à jour uniquement des champs présents dans la requête
-    if 'title'            in data: event.title            = data['title']
+    if 'title' in data:
+        title = (data['title'] or '').strip()
+        if not title:
+            return Response({'detail': 'Le titre est obligatoire.'}, status=status.HTTP_400_BAD_REQUEST)
+        event.title = title[:100]
     if 'description'      in data: event.description      = data['description']
     if 'event_type'       in data: event.event_type       = data['event_type']
     if 'location_address' in data:
@@ -530,8 +535,11 @@ def publier_evenement(request, event_id):
             status=status.HTTP_400_BAD_REQUEST
         )
 
+    visibility = request.data.get('visibility', event.visibility)
+    if visibility not in VISIBILITIES:
+        return Response({'detail': 'Visibilité invalide (public ou private).'}, status=status.HTTP_400_BAD_REQUEST)
     event.status     = 'published'
-    event.visibility = request.data.get('visibility', event.visibility)
+    event.visibility = visibility
     event.save()
 
     # Par celui-ci :

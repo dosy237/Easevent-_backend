@@ -33,6 +33,7 @@ class TicketSerializer(serializers.ModelSerializer):
             'cover_image':        public_url(e.cover_image, self.context.get('request')),
             'dress_code':         e.dress_code,
             'organizer_name':     e.organizer.full_name,
+            'map':                _map(e),
         }
 
     def get_participant(self, obj):
@@ -41,3 +42,13 @@ class TicketSerializer(serializers.ModelSerializer):
     def get_qr_payload(self, obj):
         # Le QR n'existe que pour un ticket généré
         return obj.qr_payload if obj.status == Ticket.Status.GENERATED else None
+
+
+def _map(e):
+    """Liens Google Maps du lieu (bouton « Itinéraire » du ticket)."""
+    from events.geo import maps_links
+    if e.is_online or not e.location_address:
+        return None
+    lat = float(e.latitude) if e.latitude is not None else None
+    lng = float(e.longitude) if e.longitude is not None else None
+    return maps_links(e.location_address, lat, lng)
