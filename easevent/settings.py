@@ -236,7 +236,22 @@ SIMPLE_JWT = {
 # ─────────────────────────────────────────────────────────────
 # REDIS + CELERY
 # ─────────────────────────────────────────────────────────────
-REDIS_URL = config('REDIS_URL', default='redis://localhost:6379/0')
+def _redis_url():
+    """
+    REDIS_URL si elle est fournie ; sinon construite depuis REDIS_HOST / REDIS_PORT.
+    Dans Docker, « localhost » désigne le conteneur lui-même : on vise alors le service « redis ».
+    """
+    url = config('REDIS_URL', default='').strip()
+    if url:
+        return url
+    host = config('REDIS_HOST', default='localhost').strip() or 'localhost'
+    port = config('REDIS_PORT', default='6379').strip() or '6379'
+    if host in ('localhost', '127.0.0.1') and os.path.exists('/.dockerenv'):
+        host = 'redis'
+    return f'redis://{host}:{port}/0'
+
+
+REDIS_URL = _redis_url()
 
 CACHES = {
     'default': {
@@ -319,12 +334,12 @@ EMAIL_BACKEND = config('EMAIL_BACKEND', default='easevent.mail.DynamicSendgridBa
 # Les clés ci-dessous peuvent aussi être saisies, chiffrées, dans l'administration Django
 # (Clés de service) : elles remplacent alors l'environnement sans redémarrage.
 SENDGRID_API_KEY = config('SENDGRID_API_KEY', default='')
-DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='dosyca35@gmail.com')
+DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='dosyca35@gmail.com').strip()
 SENDGRID_SANDBOX_MODE_IN_DEBUG = False
 
-CLOUDINARY_CLOUD_NAME = config('CLOUDINARY_CLOUD_NAME', default='')
-CLOUDINARY_API_KEY = config('CLOUDINARY_API_KEY', default='')
-CLOUDINARY_API_SECRET = config('CLOUDINARY_API_SECRET', default='')
+CLOUDINARY_CLOUD_NAME = config('CLOUDINARY_CLOUD_NAME', default='').strip()
+CLOUDINARY_API_KEY = config('CLOUDINARY_API_KEY', default='').strip()
+CLOUDINARY_API_SECRET = config('CLOUDINARY_API_SECRET', default='').strip()
 cloudinary.config(cloud_name=CLOUDINARY_CLOUD_NAME, api_key=CLOUDINARY_API_KEY, api_secret=CLOUDINARY_API_SECRET, secure=True)
 
 # ─────────────────────────────────────────────────────────────

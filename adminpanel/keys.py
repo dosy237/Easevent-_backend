@@ -65,7 +65,9 @@ def stored_key(name):
 
 
 def get_key(name):
-    return stored_key(name) or getattr(settings, name, '') or ''
+    # Espaces ou guillemets collés par erreur dans le .env (« SENDGRID_API_KEY= SG.… ») : retirés
+    value = stored_key(name) or getattr(settings, name, '') or ''
+    return str(value).strip().strip('"\'').strip()
 
 
 def apply_cloudinary():
