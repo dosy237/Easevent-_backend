@@ -77,3 +77,28 @@ class KeyChecksTest(TestCase):
                                  follow=True)
         self.assertContains(r, 'Test en direct')
         self.assertEqual(keys.decrypt(ServiceKey.objects.get().encrypted_value), STRIPE)
+
+
+class EnvRobustnessTest(TestCase):
+    """Le .env du serveur : espaces collés et REDIS_HOST au lieu de REDIS_URL."""
+
+    def test_espaces_et_guillemets_retires(self):
+        from django.test import override_settings
+        with override_settings(SENDGRID_API_KEY=' "SG.abc.def" '):
+            self.assertEqual(keys.get_key('SENDGRID_API_KEY'), 'SG.abc.def')
+
+    def test_redis_depuis_host_et_port(self):
+        from easevent import settings as s
+        env = {'REDIS_URL': '', 'REDIS_HOST': 'localhost', 'REDIS_PORT': '6379'}
+        with mock.patch.dict(os.environ, env), mock.patch('os.path.exists', return_value=True):
+            self.assertEqual(s._redis_url(), 'redis://redis:6379/0')        # dans Docker : le service « redis »
+        with mock.patch.dict(os.environ, env), mock.patch('os.path.exists', return_value=False):
+            self.assertEqual(s._redis_url(), 'redis://localhost:6379/0')
+        with mock.patch.dict(os.environ, {**env, 'REDIS_URL': 'redis://cache:6380/1'}):
+            self.assertEqual(s._redis_url(), 'redis://cache:6380/1')
+
+    def test_commande_diagnostic(self):
+        out = StringIO()
+        call_command('diagnostic', stdout=out)
+        self.assertIn('Redis visé', out.getvalue())
+        self.assertIn('SMS (Twilio)', out.getvalue())
