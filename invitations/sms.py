@@ -24,6 +24,19 @@ logger = logging.getLogger(__name__)
 API_URL = 'https://api.twilio.com/2010-04-01/Accounts/{sid}/Messages.json'
 TIMEOUT = 8
 
+# Refus Twilio courants → message compréhensible pour l'utilisateur
+TWILIO_REASONS = {
+    21608: "Compte Twilio d'essai : ce numéro doit d'abord être vérifié dans la console Twilio "
+           "(ou passez le compte en payant).",
+    21408: "Les SMS vers ce pays ne sont pas autorisés : activez-le dans Twilio (Messaging › Geo permissions).",
+    21211: "Numéro de téléphone invalide.",
+    21614: "Ce numéro ne peut pas recevoir de SMS.",
+    21606: "Le numéro d'envoi Twilio ne peut pas envoyer de SMS vers ce pays.",
+    21612: "Twilio ne peut pas envoyer de SMS entre ces deux numéros (pays non pris en charge).",
+    20003: "Identifiants Twilio refusés (Account SID ou Auth Token).",
+}
+last_error = {'code': None, 'reason': ''}      # dernier refus (affiché à l'utilisateur, diagnostic)
+
 
 def is_configured():
     return bool(
@@ -50,6 +63,7 @@ def send_sms(to, body):
         )
     except requests.RequestException as exc:
         logger.warning('SMS non envoyé (réseau) : %s', type(exc).__name__)
+        last_error.update(code=None, reason='')
         return 'failed'
     if resp.status_code >= 400:
         try:
@@ -57,5 +71,6 @@ def send_sms(to, body):
         except ValueError:
             code = None
         logger.warning('SMS refusé par Twilio : HTTP %s, code %s', resp.status_code, code)
+        last_error.update(code=code, reason=TWILIO_REASONS.get(code, ''))
         return 'failed'
     return 'sent'
