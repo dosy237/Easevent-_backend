@@ -52,6 +52,8 @@ def describe_error(exc):
                'unreachable', 'Name or service not known', 'ConnectionResetError')
     if any(word in msg for word in network):
         return msg[:300] + ' → service injoignable depuis le serveur (réseau, DNS ou port bloqué par l’hébergeur)'
+    if 'credits exceeded' in msg.lower():
+        return msg[:300] + ' → crédits SendGrid épuisés (offre gratuite terminée) : utilisez Gmail en secours ou rechargez SendGrid'
     if '401' in msg or 'Unauthorized' in msg:
         return msg[:300] + ' → clé SendGrid invalide ou sans le droit « Mail Send »'
     if '403' in msg or 'Forbidden' in msg:

@@ -79,3 +79,8 @@ class ResilientEmailBackendTest(SimpleTestCase):
         text = describe_error(Exception('<urlopen error Tunnel connection failed: 403 Forbidden>'))
         self.assertIn('injoignable', text)
         self.assertNotIn('expéditeur', text)
+
+    def test_credits_exceeded_explained(self):
+        from easevent.mail import describe_error
+        text = describe_error(Exception('HTTP Error 401: Unauthorized {"errors":[{"message":"Maximum credits exceeded"}]}'))
+        self.assertIn('crédits SendGrid épuisés', text)

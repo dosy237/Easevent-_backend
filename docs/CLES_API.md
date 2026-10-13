@@ -133,6 +133,7 @@ Domain Authentication).
 | Message | Cause | Solution |
 |---|---|---|
 | clé SendGrid invalide | clé fausse ou sans le droit « Mail Send » | recréer une clé « Full Access » ou « Mail Send » |
+| crédits SendGrid épuisés (« Maximum credits exceeded ») | offre gratuite de SendGrid terminée | secours Gmail ci-dessus, ou offre payante SendGrid |
 | expéditeur non vérifié | `DEFAULT_FROM_EMAIL` non vérifié dans SendGrid | Settings › Sender Authentication › Single Sender |
 | Gmail refuse | mot de passe normal au lieu d'un mot de passe d'application | étapes 1 et 2 ci-dessus |
 | service injoignable | réseau, DNS, ou port 587 bloqué par l'hébergeur | demander à l'hébergeur d'ouvrir le port 587 sortant |
