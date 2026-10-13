@@ -87,6 +87,7 @@ class ServiceKey(models.Model):
         TWILIO_MESSAGING_SERVICE_SID = 'TWILIO_MESSAGING_SERVICE_SID', 'Twilio — Messaging Service SID'
         TWILIO_FROM_NUMBER = 'TWILIO_FROM_NUMBER', 'Twilio — numéro d’envoi'
         SENDGRID_API_KEY = 'SENDGRID_API_KEY', 'SendGrid (emails)'
+        EMAIL_HOST_PASSWORD = 'EMAIL_HOST_PASSWORD', 'Gmail — mot de passe d’application (emails, secours)'
         CLOUDINARY_CLOUD_NAME = 'CLOUDINARY_CLOUD_NAME', 'Cloudinary — nom du cloud (photos, vidéos)'
         CLOUDINARY_API_KEY = 'CLOUDINARY_API_KEY', 'Cloudinary — API Key'
         CLOUDINARY_API_SECRET = 'CLOUDINARY_API_SECRET', 'Cloudinary — API Secret'

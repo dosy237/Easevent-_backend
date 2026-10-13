@@ -54,30 +54,33 @@ class Command(BaseCommand):
         except Exception as exc:
             self.line(None, 'Celery (tâches de fond)', f'{type(exc).__name__} : envois faits directement')
 
-        # Emails
+        # Emails : SendGrid, puis Gmail (SMTP) en secours
+        from easevent.mail import ResilientEmailBackend, sendgrid_configured, smtp_configured
         backend = settings.EMAIL_BACKEND
         key = get_key('SENDGRID_API_KEY')
-        self.line(bool(key) if 'Sendgrid' in backend else None, 'Emails',
-                  f'{backend.rsplit(".", 1)[-1]} · expéditeur {settings.DEFAULT_FROM_EMAIL} · clé '
-                  + (f'présente (…{key[-4:]})' if key else 'ABSENTE'))
-        if 'console' in backend.lower():
-            self.line(False, 'Emails', "EMAIL_BACKEND = console : les emails sont écrits dans le journal, jamais envoyés. Retirez cette ligne du .env")
+        self.line(True if 'Resilient' in backend else None, 'Emails : moteur',
+                  f'{backend.rsplit(".", 1)[-1]} · EMAIL_PROVIDER={settings.EMAIL_PROVIDER}')
+        if 'console' in backend.lower() or 'locmem' in backend.lower():
+            self.line(False, 'Emails', "EMAIL_BACKEND ne fait que simuler l'envoi : retirez EMAIL_BACKEND du .env")
+        self.line(sendgrid_configured() or None, 'Emails : SendGrid',
+                  f'clé présente (…{key[-4:]}) · expéditeur {settings.DEFAULT_FROM_EMAIL}' if key else 'clé absente')
+        self.line(smtp_configured() or None, 'Emails : Gmail (secours)',
+                  f'{settings.EMAIL_HOST}:{settings.EMAIL_PORT} · compte {settings.EMAIL_HOST_USER}' if smtp_configured()
+                  else 'non configuré : EMAIL_HOST_USER + EMAIL_HOST_PASSWORD (mot de passe d’application)')
+        if not (sendgrid_configured() or smtp_configured()):
+            self.line(False, 'Emails', 'aucun service : aucun email ne peut partir')
         if email:
             from django.core.mail import send_mail
             try:
                 n = send_mail('Easevent — email de test', 'Si vous lisez ceci, les emails du serveur fonctionnent.',
                               settings.DEFAULT_FROM_EMAIL, [email], fail_silently=False)
-                self.line(bool(n), f'Email de test → {email}', 'envoyé : vérifiez la boîte de réception et les indésirables')
+                via = {'sendgrid': 'SendGrid', 'smtp': 'Gmail'}.get(ResilientEmailBackend.last_channel, '')
+                self.line(bool(n), f'Email de test → {email}',
+                          f'envoyé{" par " + via if via else ""} : vérifiez la boîte de réception ET les indésirables')
             except Exception as exc:
-                msg = str(exc)
-                hint = ''
-                if 'Tunnel' in msg or 'urlopen' in msg or 'timed out' in msg:
-                    hint = ' → le serveur ne joint pas SendGrid (réseau ou pare-feu)'
-                elif '403' in msg or 'Forbidden' in msg:
-                    hint = " → l'adresse d'expédition n'est pas vérifiée dans SendGrid (Settings › Sender Authentication)"
-                elif '401' in msg or 'Unauthorized' in msg:
-                    hint = ' → clé SendGrid invalide ou sans le droit « Mail Send »'
-                self.line(False, f'Email de test → {email}', msg[:200] + hint)
+                from easevent.mail import describe_error
+                self.line(False, f'Email de test → {email}', str(exc)[:400] if 'Delivery' in type(exc).__name__
+                          else describe_error(exc))
 
         # SMS
         from invitations import sms as sms_mod
