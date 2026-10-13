@@ -1,10 +1,10 @@
 """
-easevent/mail.py — envoi des emails : SendGrid d'abord, Gmail (SMTP) en secours
+easevent/mail.py — envoi des emails par Gmail (SMTP)
 ════════════════════════════════════════════════════════════════
-- SENDGRID_API_KEY : lue à chaque envoi (administration Django chiffrée, sinon .env).
-- Secours SMTP (Gmail) : EMAIL_HOST_USER + EMAIL_HOST_PASSWORD (mot de passe
-  d'application Google). Utilisé si SendGrid échoue ou n'est pas configuré.
-- EMAIL_PROVIDER=smtp : Gmail directement, SendGrid ignoré.
+- Par défaut (EMAIL_PROVIDER=smtp) : tous les emails partent par Gmail avec
+  EMAIL_HOST_USER + EMAIL_HOST_PASSWORD (mot de passe d'application Google).
+  SendGrid n'est jamais appelé.
+- EMAIL_PROVIDER=auto (option) : SendGrid d'abord, Gmail en secours.
 Gmail n'accepte que son propre compte comme expéditeur : l'adresse d'envoi
 devient EMAIL_HOST_USER (le nom affiché « Easevent » est conservé).
 ════════════════════════════════════════════════════════════════
@@ -111,7 +111,9 @@ class ResilientEmailBackend(BaseEmailBackend):
                 errors.append(f'Gmail : {describe_error(exc)}')
                 logger.error("Échec d'envoi par Gmail (SMTP) : %s", describe_error(exc))
         if not errors:
-            errors.append('aucun service configuré (SENDGRID_API_KEY, ou EMAIL_HOST_USER + EMAIL_HOST_PASSWORD)')
+            errors.append('Gmail non configuré : EMAIL_HOST_USER + EMAIL_HOST_PASSWORD manquants dans le .env'
+                          if settings.EMAIL_PROVIDER == 'smtp' else
+                          'aucun service configuré (EMAIL_HOST_USER + EMAIL_HOST_PASSWORD, ou SENDGRID_API_KEY)')
             logger.error("Email non envoyé : %s", errors[0])
         if self.fail_silently:
             return 0

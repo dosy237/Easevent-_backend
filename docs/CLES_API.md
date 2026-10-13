@@ -79,13 +79,13 @@ docker compose exec web python manage.py keys set STRIPE_SECRET_KEY   # saisie m
 - **Clés de test** : une clé Stripe ou Notch Pay de **test** déclenche un avertissement (pas de vrais paiements).
 - **Clé de chiffrement** : la clé qui chiffre les autres (`KEYS_ENCRYPTION_KEY`, ou à défaut `SECRET_KEY`) reste dans le fichier `.env` du serveur. Ne la changez pas sans ressaisir les clés.
 
-## Emails : SendGrid, puis Gmail en secours
+## Emails : Gmail (SMTP)
 
-Les emails (code de vérification, mot de passe oublié, invitations) partent **par SendGrid**.
-Si SendGrid échoue, ou s'il n'est pas configuré, ils partent **par Gmail** (SMTP), à condition
-que le secours soit configuré.
+Tous les emails (code de vérification, mot de passe oublié, invitations) partent **par Gmail**.
+SendGrid n'est plus utilisé (crédits gratuits épuisés). Pour le réactiver en premier choix,
+avec Gmail en secours : `EMAIL_PROVIDER=auto` dans le `.env`.
 
-### Configurer le secours Gmail (5 minutes)
+### Configurer Gmail (5 minutes)
 
 1. Sur le compte Google qui enverra les emails (par exemple `dosyca35@gmail.com`), activez la
    **validation en deux étapes** : myaccount.google.com › Sécurité.
@@ -116,7 +116,7 @@ que le secours soit configuré.
    La ligne « Email de test » dit **par quel service** l'email est parti, ou la cause exacte de l'échec.
 
 Options :
-- `EMAIL_PROVIDER=smtp` : Gmail directement, SendGrid ignoré.
+- `EMAIL_PROVIDER=auto` : SendGrid d'abord, Gmail en secours (par défaut : Gmail seul).
 - `EMAIL_HOST`, `EMAIL_PORT` (587), `EMAIL_USE_TLS` (True) : pour un autre fournisseur SMTP.
 - Gmail limite l'envoi à environ 500 emails par jour : suffisant pour le lancement.
 

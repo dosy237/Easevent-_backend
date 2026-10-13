@@ -54,21 +54,26 @@ class Command(BaseCommand):
         except Exception as exc:
             self.line(None, 'Celery (tâches de fond)', f'{type(exc).__name__} : envois faits directement')
 
-        # Emails : SendGrid, puis Gmail (SMTP) en secours
-        from easevent.mail import ResilientEmailBackend, sendgrid_configured, smtp_configured
+        # Emails : Gmail (SMTP) ; SendGrid seulement si EMAIL_PROVIDER=auto
+        from adminpanel.key_checks import smtp_login_check
+        from easevent.mail import ResilientEmailBackend, smtp_configured, smtp_password
         backend = settings.EMAIL_BACKEND
-        key = get_key('SENDGRID_API_KEY')
+        gmail_only = settings.EMAIL_PROVIDER == 'smtp'
         self.line(True if 'Resilient' in backend else None, 'Emails : moteur',
-                  f'{backend.rsplit(".", 1)[-1]} · EMAIL_PROVIDER={settings.EMAIL_PROVIDER}')
+                  f'{backend.rsplit(".", 1)[-1]} · ' + ('Gmail uniquement' if gmail_only else 'SendGrid puis Gmail'))
         if 'console' in backend.lower() or 'locmem' in backend.lower():
             self.line(False, 'Emails', "EMAIL_BACKEND ne fait que simuler l'envoi : retirez EMAIL_BACKEND du .env")
-        self.line(sendgrid_configured() or None, 'Emails : SendGrid',
-                  f'clé présente (…{key[-4:]}) · expéditeur {settings.DEFAULT_FROM_EMAIL}' if key else 'clé absente')
-        self.line(smtp_configured() or None, 'Emails : Gmail (secours)',
-                  f'{settings.EMAIL_HOST}:{settings.EMAIL_PORT} · compte {settings.EMAIL_HOST_USER}' if smtp_configured()
-                  else 'non configuré : EMAIL_HOST_USER + EMAIL_HOST_PASSWORD (mot de passe d’application)')
-        if not (sendgrid_configured() or smtp_configured()):
-            self.line(False, 'Emails', 'aucun service : aucun email ne peut partir')
+        if smtp_configured():
+            ok, msg = smtp_login_check(smtp_password())
+            self.line(ok, 'Emails : Gmail', f'{settings.EMAIL_HOST}:{settings.EMAIL_PORT} · {msg}')
+        else:
+            missing = [n for n, v in (('EMAIL_HOST_USER', settings.EMAIL_HOST_USER), ('EMAIL_HOST_PASSWORD', smtp_password())) if not v]
+            self.line(False if gmail_only else None, 'Emails : Gmail', 'manquant dans le .env : ' + ', '.join(missing))
+        if gmail_only:
+            self.line(None, 'Emails : SendGrid', 'non utilisé')
+        else:
+            key = get_key('SENDGRID_API_KEY')
+            self.line(bool(key) or None, 'Emails : SendGrid', f'clé présente (…{key[-4:]})' if key else 'clé absente')
         if email:
             from django.core.mail import send_mail
             try:

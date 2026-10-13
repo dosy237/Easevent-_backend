@@ -84,3 +84,32 @@ class ResilientEmailBackendTest(SimpleTestCase):
         from easevent.mail import describe_error
         text = describe_error(Exception('HTTP Error 401: Unauthorized {"errors":[{"message":"Maximum credits exceeded"}]}'))
         self.assertIn('crédits SendGrid épuisés', text)
+
+
+@override_settings(SENDGRID_API_KEY='SG.cle.valide', EMAIL_HOST_USER='easevent.test@gmail.com',
+                   EMAIL_HOST_PASSWORD='abcdefghijklmnop')
+class GmailByDefaultTest(SimpleTestCase):
+    def setUp(self):
+        patcher = mock.patch('adminpanel.keys.stored_key', return_value='')
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_default_provider_is_gmail(self):
+        from django.conf import settings
+        self.assertEqual(settings.EMAIL_PROVIDER, 'smtp')
+
+    @mock.patch('easevent.mail.SmtpBackend.send_messages', return_value=1)
+    @mock.patch('easevent.mail.DynamicSendgridBackend.send_messages', return_value=1)
+    def test_sendgrid_never_called(self, sendgrid, smtp):
+        self.assertEqual(ResilientEmailBackend().send_messages([message()]), 1)
+        sendgrid.assert_not_called()
+        smtp.assert_called_once()
+
+    @override_settings(EMAIL_HOST_USER='', EMAIL_HOST_PASSWORD='')
+    @mock.patch('easevent.mail.DynamicSendgridBackend.send_messages', return_value=1)
+    def test_missing_gmail_is_explicit(self, sendgrid):
+        with self.assertLogs('easevent.mail', 'ERROR'):
+            with self.assertRaises(EmailDeliveryError) as ctx:
+                ResilientEmailBackend().send_messages([message()])
+        self.assertIn('EMAIL_HOST_USER', str(ctx.exception))
+        sendgrid.assert_not_called()

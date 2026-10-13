@@ -330,11 +330,11 @@ USE_TZ = True
 # ─────────────────────────────────────────────────────────────
 # EMAIL + CLOUDINARY
 # ─────────────────────────────────────────────────────────────
-# SendGrid d'abord, Gmail (SMTP) en secours : voir easevent/mail.py
+# Emails par Gmail (SMTP) ; EMAIL_PROVIDER=auto : SendGrid d'abord, Gmail en secours (easevent/mail.py)
 EMAIL_BACKEND = config('EMAIL_BACKEND', default='').strip()
 if EMAIL_BACKEND in ('', 'easevent.mail.DynamicSendgridBackend'):   # vide ou ancienne valeur : avec secours
     EMAIL_BACKEND = 'easevent.mail.ResilientEmailBackend'
-EMAIL_PROVIDER = config('EMAIL_PROVIDER', default='auto').strip().lower()   # auto | smtp
+EMAIL_PROVIDER = config('EMAIL_PROVIDER', default='smtp').strip().lower() or 'smtp'   # smtp | auto
 # Les clés ci-dessous peuvent aussi être saisies, chiffrées, dans l'administration Django
 # (Clés de service) : elles remplacent alors l'environnement sans redémarrage.
 SENDGRID_API_KEY = config('SENDGRID_API_KEY', default='')
