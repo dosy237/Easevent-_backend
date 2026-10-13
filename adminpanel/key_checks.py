@@ -33,6 +33,8 @@ FORMATS = {
     'CLOUDINARY_API_KEY': (r'^[0-9]{10,20}$', 'uniquement des chiffres (15 environ)'),
     'CLOUDINARY_API_SECRET': (r'^[A-Za-z0-9_\-]{20,}$', 'environ 27 caractères'),
     'EXPO_ACCESS_TOKEN': (r'^[A-Za-z0-9_\-]{20,}$', 'jeton d’accès Expo (expo.dev › Access tokens)'),
+    'EMAIL_HOST_PASSWORD': (r'^[a-z]{4} ?[a-z]{4} ?[a-z]{4} ?[a-z]{4}$',
+                            'mot de passe d’application Google : 16 lettres (myaccount.google.com › Sécurité)'),
 }
 
 
@@ -144,6 +146,8 @@ def live_check(name, get):
         if ok and 'mail.send' not in (r.json().get('scopes') or []):
             return False, 'clé acceptée mais sans le droit « Mail Send »'
         return ok, msg
+    if name == 'EMAIL_HOST_PASSWORD':
+        return smtp_login_check(v.replace(' ', ''))
     if name.startswith('CLOUDINARY_'):
         cloud, key, secret = get('CLOUDINARY_CLOUD_NAME'), get('CLOUDINARY_API_KEY'), get('CLOUDINARY_API_SECRET')
         if not (cloud and key and secret):
@@ -152,3 +156,23 @@ def live_check(name, get):
     # Secrets de signature (webhooks), numéro, jeton Expo : format seulement
     issue = check_format(name, v) or _format_issue(name, v)
     return (not issue), (issue or 'format correct (vérifié sans appel au service)')
+
+
+def smtp_login_check(password):
+    """Connexion au serveur SMTP (Gmail) puis déconnexion : aucun email n'est envoyé."""
+    import smtplib
+    from django.conf import settings
+    user = settings.EMAIL_HOST_USER
+    if not user:
+        return None, 'à tester une fois EMAIL_HOST_USER renseigné dans le .env (adresse Gmail)'
+    try:
+        cls = smtplib.SMTP_SSL if settings.EMAIL_USE_SSL else smtplib.SMTP
+        with cls(settings.EMAIL_HOST, settings.EMAIL_PORT, timeout=TIMEOUT) as smtp:
+            if settings.EMAIL_USE_TLS and not settings.EMAIL_USE_SSL:
+                smtp.starttls()
+            smtp.login(user, password)
+        return True, f'connexion acceptée par {settings.EMAIL_HOST} pour {user}'
+    except smtplib.SMTPAuthenticationError:
+        return False, "Gmail refuse : il faut un mot de passe d'application (validation en deux étapes activée)"
+    except (OSError, smtplib.SMTPException) as exc:
+        return False, f'{settings.EMAIL_HOST}:{settings.EMAIL_PORT} injoignable ({exc.__class__.__name__}) : port bloqué par l’hébergeur ?'

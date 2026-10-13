@@ -330,12 +330,24 @@ USE_TZ = True
 # ─────────────────────────────────────────────────────────────
 # EMAIL + CLOUDINARY
 # ─────────────────────────────────────────────────────────────
-EMAIL_BACKEND = config('EMAIL_BACKEND', default='easevent.mail.DynamicSendgridBackend')
+# Emails par Gmail (SMTP) ; EMAIL_PROVIDER=auto : SendGrid d'abord, Gmail en secours (easevent/mail.py)
+EMAIL_BACKEND = config('EMAIL_BACKEND', default='').strip()
+if EMAIL_BACKEND in ('', 'easevent.mail.DynamicSendgridBackend'):   # vide ou ancienne valeur : avec secours
+    EMAIL_BACKEND = 'easevent.mail.ResilientEmailBackend'
+EMAIL_PROVIDER = config('EMAIL_PROVIDER', default='smtp').strip().lower() or 'smtp'   # smtp | auto
 # Les clés ci-dessous peuvent aussi être saisies, chiffrées, dans l'administration Django
 # (Clés de service) : elles remplacent alors l'environnement sans redémarrage.
 SENDGRID_API_KEY = config('SENDGRID_API_KEY', default='')
 DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='dosyca35@gmail.com').strip()
 SENDGRID_SANDBOX_MODE_IN_DEBUG = False
+# Secours Gmail : EMAIL_HOST_PASSWORD = mot de passe d'application Google (16 caractères)
+EMAIL_HOST = config('EMAIL_HOST', default='smtp.gmail.com').strip()
+EMAIL_PORT = config('EMAIL_PORT', default=587, cast=int)
+EMAIL_USE_TLS = config('EMAIL_USE_TLS', default=True, cast=bool)
+EMAIL_USE_SSL = config('EMAIL_USE_SSL', default=False, cast=bool)
+EMAIL_HOST_USER = config('EMAIL_HOST_USER', default='').strip()
+EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='').strip().replace(' ', '')
+EMAIL_TIMEOUT = config('EMAIL_TIMEOUT', default=15, cast=int)
 
 CLOUDINARY_CLOUD_NAME = config('CLOUDINARY_CLOUD_NAME', default='').strip()
 CLOUDINARY_API_KEY = config('CLOUDINARY_API_KEY', default='').strip()
