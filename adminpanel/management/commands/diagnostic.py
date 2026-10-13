@@ -114,10 +114,53 @@ class Command(BaseCommand):
             except Exception as exc:
                 self.line(False, f'SMS de test → {sms}', f'{type(exc).__name__} : {str(exc)[:160]}')
 
-        # Autres services
-        for name in ('STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET', 'NOTCHPAY_PUBLIC_KEY', 'GOOGLE_MAPS_API_KEY',
-                     'GEMINI_API_KEY', 'GROQ_API_KEY', 'OPENROUTER_API_KEY'):
-            v = get_key(name)
-            mode = ' (TEST)' if '_test_' in v else (' (RÉEL)' if '_live_' in v else '')
-            self.line(bool(v) or None, name, f'présente (…{v[-4:]}){mode}' if v else 'absente')
+        # Paiements et autres services : d'où vient chaque clé (administration, .env, alias)
+        from adminpanel.keys import ALIASES, env_value, stored_key, usable
+        for name in ('STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET', 'NOTCHPAY_PUBLIC_KEY', 'NOTCHPAY_HASH_KEY',
+                     'GOOGLE_MAPS_API_KEY', 'GEMINI_API_KEY', 'GROQ_API_KEY', 'OPENROUTER_API_KEY'):
+            raw, source = (stored_key(name), 'administration') if stored_key(name) else env_value(name)
+            if raw and not usable(name, raw):
+                self.line(False, name, f'lue dans {source} mais c’est la clé PUBLIQUE (pk_…) : il faut la clé secrète sk_…')
+                continue
+            mode = ' (TEST)' if '_test_' in raw else (' (RÉEL)' if '_live_' in raw else '')
+            where = '' if source in (name, '') else f' · lue dans {source}'
+            self.line(bool(raw) or None, name, f'présente (…{raw[-4:]}){mode}{where}' if raw else 'absente')
+        self.line(bool(get_key('STRIPE_SECRET_KEY')), 'Paiement par carte',
+                  'actif' if get_key('STRIPE_SECRET_KEY') else 'inactif : STRIPE_SECRET_KEY (sk_live_… ou sk_test_…) manquante')
+        from tickets import mobile_money
+        self.line(mobile_money.available() or None, 'Mobile Money (Notch Pay)',
+                  'actif' if mobile_money.available() else 'inactif : NOTCHPAY_PUBLIC_KEY manquante')
+
+        # Noms des variables du .env (jamais les valeurs) : reconnues, alias, ou inconnues
+        known = set(ALIASES) | {a for names in ALIASES.values() for a in names} | {
+            'STRIPE_CONNECT_COUNTRY', 'STRIPE_PRICE_STANDARD_MONTHLY', 'STRIPE_PRICE_STANDARD_ANNUAL',
+            'STRIPE_PRICE_PRO_MONTHLY', 'STRIPE_PRICE_PRO_ANNUAL', 'STRIPE_PUBLISHABLE_KEY', 'STRIPE_PUBLIC_KEY',
+            'TWILIO_MESSAGING_SERVICE_SID', 'NOTCHPAY_API', 'SENDGRID_API_KEY', 'EMAIL_BACKEND', 'EMAIL_PROVIDER',
+            'EMAIL_HOST', 'EMAIL_PORT', 'EMAIL_USE_TLS', 'EMAIL_USE_SSL', 'EMAIL_HOST_USER', 'EMAIL_TIMEOUT',
+            'EMAIL_USER', 'GMAIL_USER', 'SMTP_USER', 'SENDGRID_SANDBOX_MODE_IN_DEBUG'}
+        alias_of = {a: n for n, names in ALIASES.items() for a in names}
+        prefixes = ('STRIPE', 'TWILIO', 'NOTCH', 'EMAIL', 'GMAIL', 'SMTP', 'SENDGRID')
+        names = sorted(n for n in set(os.environ) | set(_dotenv_names()) if n.startswith(prefixes))
+        self.stdout.write('      Variables du .env (noms seulement) :')
+        from decouple import config
+        for n in names:
+            if not str(config(n, default='')).strip().strip('"\''):
+                self.line(None, f'  {n}', 'présente mais VIDE')
+            elif n in alias_of:
+                self.stdout.write(f'        {n}  → lue comme {alias_of[n]}')
+            elif n in known:
+                self.stdout.write(f'        {n}  ✓')
+            else:
+                self.line(None, f'  {n}', 'nom inconnu : non utilisé (vérifiez l’orthographe)')
         self.stdout.write('Test en direct de chaque clé : python manage.py keys check')
+
+
+def _dotenv_names():
+    """Noms des variables du fichier .env du projet (les valeurs ne sont pas lues)."""
+    path = os.path.join(settings.BASE_DIR, '.env')
+    try:
+        with open(path, encoding='utf-8') as f:
+            return [line.split('=', 1)[0].strip().removeprefix('export ').strip()
+                    for line in f if '=' in line and not line.lstrip().startswith('#')]
+    except OSError:
+        return []

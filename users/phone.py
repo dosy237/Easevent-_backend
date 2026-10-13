@@ -64,7 +64,8 @@ def send_code(user, raw_phone):
     state = sms.send_sms(e164, f'Easevent : votre code de vérification est {code}. Il expire dans 10 minutes. '
                                'Ne le communiquez à personne.')
     if state != 'sent':
-        raise PhoneError("Le SMS n'a pas pu être envoyé. Vérifiez le numéro et réessayez.", 'sms_failed', 502)
+        reason = sms.last_error.get('reason') or 'Vérifiez le numéro et réessayez.'
+        raise PhoneError(f"Le SMS n'a pas pu être envoyé. {reason}", 'sms_failed', 502)
 
 
 def verify_code(user, code):

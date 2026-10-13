@@ -64,10 +64,46 @@ def stored_key(name):
     return decrypt(token) if token != _ABSENT else ''
 
 
-def get_key(name):
+# Noms souvent utilisés dans un .env pour la même clé : acceptés en plus du nom officiel
+ALIASES = {
+    'STRIPE_SECRET_KEY': ('STRIPE_API_KEY', 'STRIPE_SECRET', 'STRIPE_KEY', 'STRIPE_PRIVATE_KEY', 'STRIPE_SK',
+                          'STRIPE_LIVE_SECRET_KEY', 'STRIPE_TEST_SECRET_KEY'),
+    'STRIPE_WEBHOOK_SECRET': ('STRIPE_WEBHOOK_KEY', 'STRIPE_ENDPOINT_SECRET', 'STRIPE_WHSEC'),
+    'TWILIO_ACCOUNT_SID': ('TWILIO_SID',),
+    'TWILIO_AUTH_TOKEN': ('TWILIO_TOKEN',),
+    'TWILIO_FROM_NUMBER': ('TWILIO_PHONE_NUMBER', 'TWILIO_NUMBER', 'TWILIO_FROM', 'TWILIO_SENDER'),
+    'NOTCHPAY_PUBLIC_KEY': ('NOTCHPAY_API_KEY', 'NOTCHPAY_KEY', 'NOTCH_PAY_PUBLIC_KEY', 'NOTCH_PUBLIC_KEY'),
+    'NOTCHPAY_HASH_KEY': ('NOTCHPAY_WEBHOOK_SECRET', 'NOTCHPAY_HASH', 'NOTCH_PAY_HASH_KEY'),
+    'EMAIL_HOST_PASSWORD': ('EMAIL_PASSWORD', 'GMAIL_APP_PASSWORD', 'GMAIL_PASSWORD', 'SMTP_PASSWORD'),
+}
+
+
+def _clean(value):
     # Espaces ou guillemets collés par erreur dans le .env (« SENDGRID_API_KEY= SG.… ») : retirés
-    value = stored_key(name) or getattr(settings, name, '') or ''
-    return str(value).strip().strip('"\'').strip()
+    return str(value or '').strip().strip('"\'').strip()
+
+
+def env_value(name):
+    """Valeur de l'environnement / du .env : nom officiel, sinon un alias. Retourne (valeur, nom lu)."""
+    from decouple import config
+    value = _clean(getattr(settings, name, ''))
+    if value:
+        return value, name
+    for alias in ALIASES.get(name, ()):
+        value = _clean(config(alias, default=''))
+        if value:
+            return value, alias
+    return '', ''
+
+
+def usable(name, value):
+    """Clé publique Stripe (pk_) collée à la place de la secrète : inutilisable."""
+    return not (name == 'STRIPE_SECRET_KEY' and value.startswith(('pk_', 'pk.')))
+
+
+def get_key(name):
+    value = _clean(stored_key(name)) or env_value(name)[0]
+    return value if usable(name, value) else ''
 
 
 def apply_cloudinary():
