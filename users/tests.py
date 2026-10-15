@@ -339,10 +339,37 @@ class AccountFlowTest(TestCase):
         import re
         return re.search(r'code de vérification : (\d{6})', mail.outbox[-1].body).group(1)
 
-    def test_numero_obligatoire(self):
+    def test_numero_facultatif(self):
+        # Le numéro ne sert qu'aux invitations reçues par SMS : inscription possible sans lui
         response = self._register(phone_number='')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertIsNone(User.objects.get(email='sarah@easevent.fr').phone_number)
+
+    def test_numero_invalide_refuse(self):
+        response = self._register(phone_number='12')
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn('phone_number', response.data)
+
+    def test_connexion_rattache_les_invitations_par_email(self):
+        # Invitation envoyée à l'adresse avant le compte : visible dans l'app dès la connexion
+        from datetime import timedelta
+        from events.models import Event
+        from invitations.models import Invitation
+        from invitations.services import new_token
+        organizer = User.objects.create_user(email='orga@easevent.fr', password='Jardin-Emeraude-26',
+                                             first_name='Orga', last_name='Nisateur', is_verified=True)
+        start = timezone.now() + timedelta(days=10)
+        event = Event.objects.create(organizer=organizer, title='Mariage', event_type='mariage', status='published',
+                                     visibility='private', start_date=start, end_date=start + timedelta(hours=5))
+        inv = Invitation.objects.create(event=event, email='sarah@easevent.fr', token=new_token()[1], status='sent',
+                                        channel='email', expires_at=start + timedelta(days=7))
+        User.objects.create_user(email='sarah@easevent.fr', password='Jardin-Emeraude-26', first_name='Sarah',
+                                 last_name='Martin', is_verified=True)
+        r = self.client.post('/api/auth/login/', {'email': 'sarah@easevent.fr', 'password': 'Jardin-Emeraude-26'},
+                             format='json')
+        self.assertEqual(r.status_code, 200, r.data)
+        inv.refresh_from_db()
+        self.assertEqual(inv.invited_user.email, 'sarah@easevent.fr')
 
     def test_code_par_email_active_le_compte(self):
         r = self._register()

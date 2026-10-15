@@ -429,7 +429,8 @@ GOOGLE_MAPS_API_KEY = config('GOOGLE_MAPS_API_KEY', default='')
 ANDROID_PACKAGE   = config('ANDROID_PACKAGE', default='com.eranis.easevent')
 IOS_BUNDLE_ID     = config('IOS_BUNDLE_ID', default='com.eranis.easevent')
 # Pages des stores (vides tant que l'app n'est pas publiée) et lien direct de l'APK
-ANDROID_STORE_URL = config('ANDROID_STORE_URL', default='')
+ANDROID_STORE_URL = config('ANDROID_STORE_URL', default='').strip() or \
+    f'https://play.google.com/store/apps/details?id={ANDROID_PACKAGE}'
 IOS_STORE_URL     = config('IOS_STORE_URL', default='')
 APP_DOWNLOAD_URL  = config('APP_DOWNLOAD_URL', default='')
 # Liens https ouverts directement dans l'app (Android App Links / iOS Universal Links)

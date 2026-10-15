@@ -215,6 +215,12 @@ def login_view(request):
 
     user   = serializer.validated_data['user']
     tokens = get_tokens_for_user(user)
+    # Invitations envoyées à cette adresse (email vérifié) : rattachées au compte, visibles dans l'app
+    try:
+        from .phone import claim_invitations
+        claim_invitations(user, email=user.email)
+    except Exception:
+        logger.exception('Invitations par email non rattachées à la connexion')
     return Response({
         'access':  tokens['access'],
         'refresh': tokens['refresh'],
